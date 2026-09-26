@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>桌宠赛车 · 双人卡丁车</title>
+  <script type="application/json" id="pet-sdk">{"version":2,"permissions":["character:read","character:watch","sessions:connect"],"network":["lan"],"interaction":{"players":2,"transport":"lan","protocol":{"id":"pet-kart","version":1}}}</script>
+  <style>__STYLE__</style>
+</head>
+<body>
+  <canvas id="stage" aria-label="3D 赛道"></canvas>
+
+  <header class="topbar">
+    <div class="brand"><span class="flag" aria-hidden="true">🏁</span><strong>桌宠赛车</strong><span id="conn" class="conn" role="status" hidden></span></div>
+    <div class="tools">
+      <button id="music" class="pill" type="button" aria-pressed="false">音乐 关</button>
+      <button id="sfx" class="pill" type="button" aria-pressed="false">音效 关</button>
+      <button id="leave" class="pill ghost" type="button" hidden>离开</button>
+    </div>
+  </header>
+  <div id="error" class="error" role="alert" hidden></div>
+  <div id="banner" class="banner" role="status" hidden></div>
+
+  <section id="hud" class="hud" hidden aria-label="比赛信息">
+    <div class="hud-left"><div id="place" class="place">1st</div><div class="hud-stack"><div id="lap" class="lap">圈 1 / 3</div><div id="time" class="time">0:00.00</div></div></div>
+    <div id="item-slot" class="item-slot" data-state="empty"><div id="item-icon" class="item-icon"></div><small id="item-name">道具箱</small></div>
+    <canvas id="minimap" class="minimap" width="220" height="220" aria-label="小地图"></canvas>
+    <div class="speedo"><strong id="speed">0</strong><small>km/h</small><div id="drift-meter" class="drift-meter" hidden><div id="charge"></div></div></div>
+    <div class="keys-hint">↑/W 油门 · ↓/S 刹车 · ←→ 转向 · 空格/Shift 漂移 · E 道具</div>
+    <div id="wrong-way" class="wrong-way" hidden>方向反了！</div>
+  </section>
+  <div id="countdown" class="countdown" hidden aria-live="assertive"></div>
+  <div id="ceremony-bar" class="ceremony-bar" hidden><span>🏆 颁奖典礼</span><button id="skip-ceremony" class="pill" type="button">跳过 ›</button></div>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <div id="menu" class="menu">
+    <section id="title-panel" class="panel title-panel" aria-labelledby="title-h">
+      <div class="eyebrow">DESKTOP PET GRAND PRIX</div>
+      <h1 id="title-h">把桌宠塞进卡丁车，<br>和搭子飙一圈。</h1>
+      <div class="driver-card">
+        <div id="driver-portrait" class="portrait" aria-hidden="true">🐭</div>
+        <div class="driver-info"><small>当前车手</small><strong id="driver-name">…</strong><span id="driver-kind" class="kind-tag"></span></div>
+      </div>
+      <div id="grant-box" class="grant-box" hidden><p id="grant-text"></p><button id="grant-retry" class="chip" type="button">🔓 重新请求授权</button></div>
+      <p id="pet-auto" class="pet-auto" hidden>🐾 已自动带入你的桌宠形象，换装后会自动跟随。</p>
+      <details id="swap" class="import">
+        <summary>换个车手（可选）</summary>
+        <div class="import-row">
+          <button id="use-pet" class="chip" type="button" hidden>🐾 用当前桌宠（2D）</button>
+          <label class="chip file">📦 导入角色包 / 图片<input id="import-file" type="file" accept=".zip,image/png,image/webp,image/jpeg,image/gif"></label>
+          <label class="chip file">📁 导入角色文件夹<input id="import-folder" type="file" webkitdirectory></label>
+        </div>
+        <div id="toy-row" class="import-row toys"><small>内置车手：</small></div>
+        <p class="import-help">3D 布偶：导入带实时布偶数据的角色包（如 <code>rat-doll-female.zip</code>），车手会以真 3D 骨骼坐进车里。2D：任意 PNG / WebP 图片或普通角色包。也可以直接把文件拖进窗口。</p>
+      </details>
+      <p id="import-status" class="import-status" role="status"></p>
+      <button id="solo" class="primary" type="button">单人比赛 · 对战电脑</button>
+      <p id="env-note" class="note"></p>
+    </section>
+
+    <section id="lobby-panel" class="panel" hidden aria-labelledby="lobby-title">
+      <div class="eyebrow">PIT LANE</div>
+      <h2 id="lobby-title">双人赛</h2>
+      <div id="lobby-players" class="players"></div>
+      <p id="track-hint" class="note"></p>
+      <div id="track-list" class="tracks"></div>
+      <p id="track-blurb" class="note"></p>
+      <button id="ready" class="primary" type="button">我准备好了</button>
+      <p id="lobby-note" class="note"></p>
+    </section>
+
+    <section id="results-panel" class="panel" hidden aria-labelledby="results-title">
+      <div class="eyebrow">FINISH</div>
+      <h2 id="results-title">冲线！</h2>
+      <div id="results-players" class="results"></div>
+      <p class="note">下一场赛道（房主决定）</p>
+      <div id="next-track-list" class="tracks"></div>
+      <button id="again" class="primary" type="button">再来一局</button>
+      <p id="results-note" class="note"></p>
+    </section>
+  </div>
+  <div class="drop-hint" aria-hidden="true">松手导入角色</div>
+  <script>__SCRIPT__</script>
+</body>
+</html>

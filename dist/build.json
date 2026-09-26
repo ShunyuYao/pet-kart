@@ -1,0 +1,13 @@
+{
+  "file": "dist/桌宠赛车.html",
+  "bytes": 719275,
+  "sha256": "432b223cbd60119123ab4745996ca627b12fb72ee37f39394f6d720a0ac90b06",
+  "version": "0.3.0",
+  "protocol": {
+    "id": "pet-kart",
+    "version": 1
+  },
+  "esbuild": "0.28.1",
+  "three": "0.164.1",
+  "cannon": "0.20.0"
+}
