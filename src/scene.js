@@ -134,10 +134,14 @@ export function createWorld(canvas){
   }
   async function setDriver(seat,{profile,asset,fallback}){
     let k=karts.get(seat);
-    if(k&&k.signature===profile.signature&&k.color===profile.color&&k.name===profile.name)return;
+    // Views arrive many times a second: an identical request must not restart a slow
+    // (3D) build that is still in flight, or that avatar would never finish.
+    const key=profile.signature+'|'+profile.color+'|'+profile.name;
+    if(k&&(k.building?k.building===key:k.signature===profile.signature&&k.color===profile.color&&k.name===profile.name))return;
     if(!k){k={seat};karts.set(seat,k);}
-    const token=Symbol();k.token=token;
-    const avatar=await buildAvatar(asset,fallback);
+    const token=Symbol();k.token=token;k.building=key;
+    let avatar;
+    try{avatar=await buildAvatar(asset,fallback);}finally{if(k.token===token)k.building=null;}
     if(k.token!==token){avatar.dispose?.();return;}
     if(k.root)scene.remove(k.root);k.avatar?.dispose?.();
     const kart=makeKart(profile.color,seat+1),root=new THREE.Group(),body=new THREE.Group();

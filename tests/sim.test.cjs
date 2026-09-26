@@ -89,5 +89,6 @@ test('three-kart race: distinct grid slots, 1/2/3 places, results reached',()=>{
   while(s.phase!=='results'&&guard++<60*400){for(const i of [0,1,2])S.setInput(s,i,ai[i](s,i));S.step(s,1000/60);}
   assert.equal(s.phase,'results');assert.deepEqual(s.karts.map(k=>k.place).sort(),[1,2,3]);
   const snap=S.snapshot(s);assert(S.validSnapshot(snap),'3-kart snapshot valid');
-  assert(!S.validSnapshot({...snap,karts:[...snap.karts,{...snap.karts[0],seat:3}]}),'at most 3 karts / seats 0-2');
+  assert(!S.validSnapshot({...snap,karts:[...snap.karts,{...snap.karts[0],seat:4}]}),'seats are 0-3 only');
+  assert(!S.validSnapshot({...snap,karts:[...snap.karts,{...snap.karts[0],seat:3},{...snap.karts[0],seat:3}]}),'at most 4 karts');
 });

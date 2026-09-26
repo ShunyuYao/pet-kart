@@ -10,14 +10,39 @@
     const color=/^#[0-9a-f]{6}$/i.test(p.color||'')?p.color:'#ff7a59';
     return {name,signature:p.signature,kind:p.kind,color};
   }
-  function create({seed='room',solo=false,now=()=>Date.now()}={}){
+  const SEATS=[0,1,2,3];
+  // fill: computer drivers that take every empty seat (LAN rooms race 4 karts);
+  // they give their seat to a human who joins between races.
+  function create({seed='room',solo=false,fill=null,now=()=>Date.now()}={}){
     const room={phase:'lobby',trackId:'cheese',laps:S.LAPS,raceNo:0,players:[],race:null,solo,notice:''};
+    const waiting=new Map();
     let ai=null;
+    const racing=()=>!!room.race&&room.race.phase!=='results';
     function seat(n){return room.players.find(p=>p.seat===n);}
-    function join(n,profile,{isAI=false}={}){
-      const p=validateProfile(profile);let s=seat(n);
+    function place(n,profile,isAI){
+      let s=seat(n);
+      if(s&&s.ai!==isAI){room.players.splice(room.players.indexOf(s),1);s=null;}
       if(!s){s={seat:n,ready:false,connected:true,ai:isAI};room.players.push(s);room.players.sort((a,b)=>a.seat-b.seat);}
-      Object.assign(s,p,{connected:true});if(isAI)s.ready=true;return s;
+      Object.assign(s,profile,{connected:true,gone:false});if(isAI)s.ready=true;return s;
+    }
+    function refill(){
+      if(!fill||racing())return;
+      for(const [n,p] of waiting){waiting.delete(n);place(n,p,false);}
+      const used=new Set(room.players.filter(p=>p.ai).map(p=>p.signature));
+      for(const n of SEATS)if(!seat(n)){const cpu=fill.find(c=>!used.has(c.signature));if(!cpu)break;used.add(cpu.signature);place(n,validateProfile(cpu),true);}
+    }
+    function join(n,profile,{isAI=false}={}){
+      if(!SEATS.includes(n))throw Error('invalid_seat');
+      const p=validateProfile(profile);
+      // A human arriving mid-race waits for the results screen instead of hijacking a kart.
+      if(!isAI&&racing()&&seat(n)?.ai!==false){waiting.set(n,p);return null;}
+      const s=place(n,p,isAI);refill();return s;
+    }
+    function isHuman(n){return seat(n)?.ai===false||waiting.has(n);}
+    function remove(n){
+      waiting.delete(n);const s=seat(n);if(!s)return;
+      if(racing()){s.connected=false;s.ready=false;return;}
+      room.players.splice(room.players.indexOf(s),1);refill();
     }
     function leave(n){const s=seat(n);if(s){s.connected=false;s.ready=false;}}
     function setTrack(id){if(!T.ids.includes(id))throw Error('invalid_track');if(room.race&&room.race.phase!=='results')throw Error('invalid_phase');room.trackId=id;for(const p of room.players)if(!p.ai)p.ready=false;}
@@ -38,20 +63,25 @@
     }
     function input(n,value){if(room.race)S.setInput(room.race,n,value);}
     function tick(dtMs){
+      if(fill&&!racing()&&(waiting.size||room.players.some(p=>!p.ai&&p.gone)))settle();
       if(!room.race)return;
       for(const a of ai||[]){const inp=a.drive(room.race,a.seat);if(inp)S.setInput(room.race,a.seat,inp);}
       S.step(room.race,dtMs);
     }
+    // Between races: humans who left during the race give their seat back, spectators sit down.
+    function settle(){for(const p of [...room.players])if(!p.ai&&p.gone)room.players.splice(room.players.indexOf(p),1);refill();}
+    function depart(n){const s=seat(n);if(racing()&&s&&!s.ai){s.gone=true;s.connected=false;s.ready=false;waiting.delete(n);}else remove(n);}
     function view(you){
-      return {v:1,you,solo:room.solo,phase:room.phase,trackId:room.trackId,laps:room.laps,raceNo:room.raceNo,notice:room.notice,
+      const spectator=waiting.has(you);
+      return {v:1,you,solo:room.solo,phase:spectator?'lobby':room.phase,trackId:room.trackId,laps:room.laps,raceNo:room.raceNo,notice:room.notice,waiting:spectator,
         players:room.players.map(p=>({seat:p.seat,name:p.name,signature:p.signature,kind:p.kind,color:p.color,ready:p.ready,connected:p.connected,ai:p.ai})),
-        race:room.race?S.snapshot(room.race):null};
+        race:room.race&&!spectator?S.snapshot(room.race):null};
     }
-    return {room,join,leave,setTrack,ready,input,tick,view,seat};
+    return {room,join,leave,depart,setTrack,ready,input,tick,view,seat,isHuman,waiting:()=>[...waiting.keys()]};
   }
   function validView(v){
-    return !!v&&v.v===1&&[0,1,2].includes(v.you)&&['lobby','race'].includes(v.phase)&&T.ids.includes(v.trackId)&&Number.isSafeInteger(v.raceNo)&&
-      Array.isArray(v.players)&&v.players.length<=3&&v.players.every(p=>{try{validateProfile(p);return [0,1,2].includes(p.seat);}catch{return false;}})&&
+    return !!v&&v.v===1&&SEATS.includes(v.you)&&['lobby','race'].includes(v.phase)&&T.ids.includes(v.trackId)&&Number.isSafeInteger(v.raceNo)&&typeof v.waiting==='boolean'&&
+      Array.isArray(v.players)&&v.players.length<=4&&v.players.every(p=>{try{validateProfile(p);return SEATS.includes(p.seat);}catch{return false;}})&&
       (v.race===null||S.validSnapshot(v.race));
   }
   return {create,validateProfile,validView,KINDS};

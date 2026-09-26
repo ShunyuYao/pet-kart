@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>桌宠赛车 · 双人卡丁车</title>
-  <script type="application/json" id="pet-sdk">{"version":2,"permissions":["character:read","character:watch","sessions:connect"],"network":["lan"],"interaction":{"players":2,"transport":"lan","protocol":{"id":"pet-kart","version":1}}}</script>
+  <title>桌宠赛车 · 多人卡丁车</title>
+  <script type="application/json" id="pet-sdk">{"version":2,"permissions":["character:read","character:watch","sessions:connect"],"network":["lan"],"interaction":{"players":4,"transport":"lan","protocol":{"id":"pet-kart","version":2}}}</script>
   <style>__STYLE__</style>
 </head>
 <body>
@@ -36,7 +36,7 @@
   <div id="menu" class="menu">
     <section id="title-panel" class="panel title-panel" aria-labelledby="title-h">
       <div class="eyebrow">DESKTOP PET GRAND PRIX</div>
-      <h1 id="title-h">把桌宠塞进卡丁车，<br>和搭子飙一圈。</h1>
+      <h1 id="title-h">把桌宠塞进卡丁车，<br>和朋友飙一圈。</h1>
       <div class="driver-card">
         <div id="driver-portrait" class="portrait" aria-hidden="true">🐭</div>
         <div class="driver-info"><small>当前车手</small><strong id="driver-name">…</strong><span id="driver-kind" class="kind-tag"></span></div>
@@ -60,7 +60,7 @@
 
     <section id="lobby-panel" class="panel" hidden aria-labelledby="lobby-title">
       <div class="eyebrow">PIT LANE</div>
-      <h2 id="lobby-title">双人赛</h2>
+      <h2 id="lobby-title">多人赛</h2>
       <div id="lobby-players" class="players"></div>
       <p id="track-hint" class="note"></p>
       <div id="track-list" class="tracks"></div>

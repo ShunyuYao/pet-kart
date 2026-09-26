@@ -20,10 +20,10 @@
     return {steer:clamp(Math.round(n(v.steer)*100)/100,-1,1),throttle:n(v.throttle)>0?1:0,brake:n(v.brake)>0?1:0,drift:n(v.drift)>0?1:0,
       item:Number.isSafeInteger(v.item)&&v.item>=0?Math.max(v.item,prev?.item||0):(prev?.item||0)};
   }
-  function makeKart(track,seat,slot){
-    // Grid: up to three karts side by side just behind the start line (s = 0),
-    // so nobody starts directly behind (and rear-ends) another kart.
-    const lane=[-5,5,0][slot],back=8+(slot>2?7:0)+(slot===2?1.5:0);
+  function makeKart(track,seat,slot,count){
+    // Grid just behind the start line (s = 0): up to three karts side by side; four
+    // karts start in two rows of two, the second row far enough back not to rear-end.
+    const four=count>3,lane=four?[-6,2,-2,6][slot]:[-5,5,0][slot],back=8+(four?(slot>1?9:0):(slot===2?1.5:0));
     const p=T.at(track,track.N-back,lane);
     return {seat,x:p.x,y:p.y,z:p.z,yaw:p.yaw,speed:0,slide:0,steer:0,idx:T.wrap(Math.round(track.N-back),track.N),lat:lane,
       dist:-back,lap:0,item:null,rollUntil:0,itemUsed:0,boost:0,boostKind:'',spin:0,drift:0,driftDir:0,charge:0,
@@ -32,7 +32,7 @@
   function create({trackId='cheese',laps=LAPS,seed=1,seats=[0,1]}={}){
     const track=T.build(trackId);
     const state={v:1,trackId,laps,seed:hashSeed(seed),phase:'grid',t:0,countdown:COUNTDOWN,finishAt:0,
-      karts:seats.map((seat,i)=>makeKart(track,seat,i)),inputs:{},boxes:[],hazards:[],projectiles:[],events:[],eventSeq:0,nextId:1};
+      karts:seats.map((seat,i)=>makeKart(track,seat,i,seats.length)),inputs:{},boxes:[],hazards:[],projectiles:[],events:[],eventSeq:0,nextId:1};
     for(const s of track.boxes)for(const lat of [-5,0,5])state.boxes.push({s,lat,until:0});
     for(const k of state.karts)state.inputs[k.seat]={...NEUTRAL};
     return state;
@@ -179,8 +179,8 @@
   // Guests treat snapshots as untrusted data: validate shape before rendering.
   function validSnapshot(s){
     const num=Number.isFinite;
-    return !!s&&s.v===1&&T.ids.includes(s.trackId)&&PHASES.includes(s.phase)&&num(s.t)&&num(s.countdown)&&Array.isArray(s.karts)&&s.karts.length<=3&&
-      s.karts.every(k=>[0,1,2].includes(k.seat)&&['x','y','z','yaw','speed','dist'].every(f=>num(k[f]))&&(k.item===null||ITEMS.includes(k.item)))&&
+    return !!s&&s.v===1&&T.ids.includes(s.trackId)&&PHASES.includes(s.phase)&&num(s.t)&&num(s.countdown)&&Array.isArray(s.karts)&&s.karts.length<=4&&
+      s.karts.every(k=>[0,1,2,3].includes(k.seat)&&['x','y','z','yaw','speed','dist'].every(f=>num(k[f]))&&(k.item===null||ITEMS.includes(k.item)))&&
       Array.isArray(s.boxes)&&s.boxes.length<=64&&Array.isArray(s.hazards)&&s.hazards.length<=16&&Array.isArray(s.projectiles)&&s.projectiles.length<=16&&Array.isArray(s.events)&&s.events.length<=24;
   }
   return {K,LAPS,ITEMS,COUNTDOWN,create,start,step,stepKart,setInput,normalizeInput,snapshot,validSnapshot,place,NEUTRAL};

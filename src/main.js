@@ -13,7 +13,8 @@ const audio=createAudio();
 const ITEM_ICON={mushroom:'🍄',banana:'🍌',yarn:'🧶'},ITEM_NAME={mushroom:'加速蘑菇',banana:'香蕉皮',yarn:'追踪毛线球'};
 const KIND_LABEL={doll3d:'3D 布偶',sprite:'2D 角色',toy:'内置玩具'};
 // Computer drivers: fixed built-in toys, keyed by their stable signatures.
-const CPU_ASSETS={'builtin:cpu-cheddar':{kind:'toy',species:'cat',color:'#6c7cff'},'builtin:cpu-cotton':{kind:'toy',species:'bunny',color:'#22c55e'}};
+const CPU_ASSETS={'builtin:cpu-cheddar':{kind:'toy',species:'cat',color:'#6c7cff'},'builtin:cpu-cotton':{kind:'toy',species:'bunny',color:'#22c55e'},'builtin:cpu-pudding':{kind:'toy',species:'mouse',color:'#f59e0b'}};
+const SEATS=[0,1,2,3];
 const cpuAsset=p=>CPU_ASSETS[p.signature]||{kind:'toy',species:'mouse',color:p.color};
 
 let driver=null,transport=null,mode='title',view=null,connection='idle',sdk=window.pet||null,petDriver=null;
@@ -24,7 +25,7 @@ const peerAssets=new Map(),keys=new Set();
 function show(panel){for(const id of ['title-panel','lobby-panel','results-panel'])$(id).hidden=id!==panel;$('menu').hidden=!panel;}
 function error(text){$('error').textContent=text||'';$('error').hidden=!text;clearTimeout(errorTimer);if(text)errorTimer=setTimeout(()=>{$('error').hidden=true;},7000);}
 function toast(text){$('toast').textContent=text;$('toast').hidden=false;$('toast').classList.remove('pop');void $('toast').offsetWidth;$('toast').classList.add('pop');clearTimeout(toastTimer);toastTimer=setTimeout(()=>{$('toast').hidden=true;},1800);}
-function describe(e){const m=e?.message||String(e);const map={no_invitation:'这份 HTML 还没有联机邀请。',protocol_mismatch:'双方的游戏版本不一致，请用同一份 HTML。',session_closed:'本次邀请已结束。',zip_invalid:'这个 ZIP 读不出来，请确认是完整的角色包。',zip64_unsupported:'ZIP 太大（ZIP64），请重新打包后再导入。',pack_no_character:'包里没有 character.json，不像是桌宠角色包。',pack_no_frames:'角色包里没有找到 idle 动作图。',pack_realtime_invalid:'角色包里的 3D 布偶数据不完整。',image_decode_failed:'图片解码失败，换一张 PNG / WebP / JPG 试试。',file_too_large:'文件太大了（超过 12 MB）。',asset_too_large:'形象素材超过 1 MB，搭子那边会显示为玩具车手。',CHARACTER_IMAGE_UNAVAILABLE:'暂时读不到当前桌宠形象。',invalid_view:'收到了一份无效的对局数据，已忽略。'};
+function describe(e){const m=e?.message||String(e);const map={no_invitation:'这份 HTML 还没有联机邀请。',protocol_mismatch:'大家的游戏版本不一致，请用房主发来的同一份 HTML。',session_closed:'本次邀请已结束。',zip_invalid:'这个 ZIP 读不出来，请确认是完整的角色包。',zip64_unsupported:'ZIP 太大（ZIP64），请重新打包后再导入。',pack_no_character:'包里没有 character.json，不像是桌宠角色包。',pack_no_frames:'角色包里没有找到 idle 动作图。',pack_realtime_invalid:'角色包里的 3D 布偶数据不完整。',image_decode_failed:'图片解码失败，换一张 PNG / WebP / JPG 试试。',file_too_large:'文件太大了（超过 12 MB）。',asset_too_large:'形象素材超过 1 MB，朋友那边会显示为玩具车手。',CHARACTER_IMAGE_UNAVAILABLE:'暂时读不到当前桌宠形象。',invalid_view:'收到了一份无效的对局数据，已忽略。'};
   return map[m]||(/permission|denied|revoked/i.test(m)?'能力未授权：请重新打开 HTML 并允许读取形象 / 联机。':/zip_entry_missing/.test(m)?'角色包缺少文件：'+m.split(':').slice(1).join(':'):'出了点问题：'+m);}
 function portraitInto(el,d){el.replaceChildren();if(d?.portrait){const img=new Image();img.src=d.portrait;img.alt='';el.append(img);}else{el.textContent=d?.asset?.species==='cat'?'🐱':d?.asset?.species==='bunny'?'🐰':'🐭';}}
 function renderDriverCard(){
@@ -124,14 +125,16 @@ function syncDrivers(v){
   if(driver)void world.setDriver(v.you,{profile:driver.profile,asset:driver.asset,fallback:driver.fallback});
   for(const p of v.players){
     if(p.seat===v.you)continue;
-    const asset=p.ai?cpuAsset(p):peerAssets.get(p.signature);
+    const asset=p.ai?cpuAsset(p):peerAsset(p.signature);
     if(asset)void world.setDriver(p.seat,{profile:p,asset});
     else void world.setDriver(p.seat,{profile:{...p,signature:'pending:'+p.signature},asset:{kind:'toy',species:'mouse',color:p.color}});
   }
-  for(const seat of [0,1,2])if(seat!==v.you&&!v.players.some(p=>p.seat===seat))world.removeDriver(seat);
+  for(const seat of SEATS)if(seat!==v.you&&!v.players.some(p=>p.seat===seat))world.removeDriver(seat);
 }
+// Another racer may run the very same character (same signature): nobody sends us our own avatar back.
+const peerAsset=signature=>signature===driver?.profile.signature?driver.asset:peerAssets.get(signature);
 function onAsset(seat,signature,asset){
-  if(!C.checkAsset(asset)){error('搭子的形象数据无效，已改用玩具车手显示。');return;}
+  if(!C.checkAsset(asset)){error('朋友的形象数据无效，已改用玩具车手显示。');return;}
   peerAssets.set(signature,asset);if(view)syncDrivers(view);
 }
 function onConnection(s){connection=s;renderMenus();if(s==='closed'&&mode!=='title')toast('联机已结束');}
@@ -144,12 +147,13 @@ async function startSolo(){
 async function startLan(){
   transport=Net.create(sdk.sessions,{onView,onConnection,onAsset,onError:e=>{if(!/backpressure/.test(e.message))error(describe(e));}});mode='lobby';
   const ctx=await transport.start(driver.profile,driver.asset);
-  await world.setDriver(ctx.role==='host'?0:1,{profile:driver.profile,asset:driver.asset,fallback:driver.fallback});
+  // A guest learns its seat (1-3) from the host's first view; syncDrivers places it then.
+  if(ctx.role==='host')await world.setDriver(0,{profile:driver.profile,asset:driver.asset,fallback:driver.fallback});
 }
 async function leave(){
   const t=transport;transport=null;view=null;pred=null;mode='title';lastRaceNo=-1;world.stopCeremony();ceremonyFor=-1;
   try{await t?.leave();}catch{}t?.dispose();audio.silence();
-  world.removeDriver(1);await world.setDriver(0,{profile:driver.profile,asset:driver.asset,fallback:driver.fallback});
+  for(const seat of SEATS.slice(1))world.removeDriver(seat);await world.setDriver(0,{profile:driver.profile,asset:driver.asset,fallback:driver.fallback});
   renderMenus();
 }
 
@@ -162,20 +166,23 @@ function renderMenus(){
   // Driving keys (Space = drift) must not re-activate whatever button was focused last.
   if(mode==='race'&&document.activeElement?.matches?.('button'))document.activeElement.blur();
   show(mode==='title'?'title-panel':mode==='lobby'?'lobby-panel':mode==='results'?'results-panel':null);
-  const labels={idle:'',solo:'单人 · 对战电脑',waiting:'等待搭子加入…',connected:'已连接搭子',reconnecting:'正在重连…',closed:'邀请已结束'};
+  const labels={idle:'',solo:'单人 · 对战电脑',waiting:'等待朋友加入…',connected:'已联机',reconnecting:'正在重连…',closed:'邀请已结束'};
   $('conn').textContent=labels[connection]||connection;$('conn').dataset.state=connection;$('conn').hidden=!transport;
   $('leave').hidden=!transport;$('leave').textContent=solo?'回到首页':'离开本局';
   if(view&&(mode==='lobby'||mode==='results')){
     const me=view.players.find(p=>p.seat===view.you);
     for(const box of [$('lobby-players'),$('results-players')])box.replaceChildren();
-    $('lobby-players').append(...[0,1,2].map(seat=>playerRow(view.players.find(p=>p.seat===seat),seat)));
+    $('lobby-players').append(...(solo?[0,1,2]:SEATS).map(seat=>playerRow(view.players.find(p=>p.seat===seat),seat)));
     for(const b of document.querySelectorAll('[data-track]')){b.setAttribute('aria-pressed',String(b.dataset.track===view.trackId));b.disabled=!host;}
     $('track-hint').textContent=host?'选一条赛道（房主决定）':'房主选择了：'+T.build(view.trackId).name;
     $('track-blurb').textContent=T.build(view.trackId).blurb+' · '+view.laps+' 圈';
     const ended=connection==='closed';
-    $('ready').disabled=ended||!me;$('ready').textContent=solo?'开始比赛':me?.ready?'已准备 · 点此取消':'我准备好了';
-    $('lobby-note').textContent=ended?'对方已离开。通过桌宠重新发送这份 HTML，就能再比一场。':solo?'电脑对手已就位。':view.players.length<2?'把这个 HTML 通过桌宠「发送并一起玩」给搭子，对方接受后会出现在这里。':'两人都准备好就发车。';
-    $('lobby-title').textContent=solo?'单人赛 · 对战电脑':'双人赛 · 局域网';
+    const people=view.players.filter(p=>!p.ai).length;
+    $('ready').disabled=ended||!me||view.waiting;$('ready').textContent=solo?'开始比赛':view.waiting?'本局结束后上场':me?.ready?'已准备 · 点此取消':'我准备好了';
+    $('lobby-note').textContent=ended?(host?'房间已关闭。':'房主已离开。')+'通过桌宠重新发送这份 HTML，就能再比一场。':solo?'电脑对手已就位。':view.waiting?'比赛正在进行，本局结束后你会顶替一位电脑车手上场。':
+      people<2?(host?'点游戏窗口顶部的「＋ 邀请」，把同一局域网的朋友拉进来（最多 4 人）。':'等房主开局。'):
+      '所有人都准备好就发车，空位由电脑车手补上。'+(host&&people<4?'还可以点顶部「＋ 邀请」再拉一位朋友。':'');
+    $('lobby-title').textContent=solo?'单人赛 · 对战电脑':'多人赛 · 局域网 '+people+'/4';
   }
   if(mode==='results'){
     const order=[...race.karts].sort((a,b)=>a.place-b.place);
@@ -185,16 +192,16 @@ function renderMenus(){
       const time=document.createElement('span');time.textContent=k.finishedAt?fmt(k.finishedAt):'未完赛';row.append(medal,name,time);return row;}));
     const mine=race.karts.find(k=>k.seat===view.you);
     $('results-title').textContent=mine?.place===1?'冠军！冲线第一 🏁':'第 '+(mine?.place||2)+' 名 · 下次再冲！';
-    const me=view.players.find(p=>p.seat===view.you),other=view.players.find(p=>p.seat!==view.you);
-    $('again').disabled=connection==='closed';$('again').textContent=solo?'再来一局':me?.ready?'已准备 · 等搭子':'再来一局';
-    $('results-note').textContent=solo?'':connection==='closed'?'对方已离开。':other?.ready?'搭子想再来一局！':'两人都点「再来一局」就重新发车。';
+    const me=view.players.find(p=>p.seat===view.you),keen=view.players.filter(p=>!p.ai&&p.seat!==view.you&&p.ready).length;
+    $('again').disabled=connection==='closed';$('again').textContent=solo?'再来一局':me?.ready?'已准备 · 等其他人':'再来一局';
+    $('results-note').textContent=solo?'':connection==='closed'?(host?'房间已关闭。':'房主已离开。'):keen?keen+' 位朋友想再来一局！':'所有人都点「再来一局」就重新发车。';
     for(const b of document.querySelectorAll('[data-next-track]')){b.setAttribute('aria-pressed',String(b.dataset.nextTrack===view.trackId));b.disabled=!host;}
   }
 }
 function playerRow(p,seat){
   const row=document.createElement('div');row.className='player-row'+(p&&p.seat===view.you?' is-you':'');
   const dot=document.createElement('span');dot.className='dot';dot.style.background=p?.color||'#ccc';
-  const name=document.createElement('strong');name.textContent=p?p.name+(p.seat===view.you?'（你）':''):'等待搭子…';
+  const name=document.createElement('strong');name.textContent=p?p.name+(p.seat===view.you?'（你）':''):'空位';
   const kind=document.createElement('small');kind.textContent=p?(p.ai?'电脑':KIND_LABEL[p.kind]):'';
   const st=document.createElement('span');st.className='state';st.textContent=!p?'':p.ai?'就位':!p.connected?'掉线中':p.ready?'✓ 已准备':'未准备';
   row.append(dot,name,kind,st);return row;
@@ -265,7 +272,8 @@ function remoteStates(){
 }
 
 // ---------- HUD + events ----------
-const EVENT_TEXT={hit:s=>s===view.you?'💫 打滑了！':'💥 击中搭子！',box:s=>s===view.you?'🎁 抽道具…':null,lap:(s,e)=>s===view.you?(e.lap===view.race.laps?'🔥 最后一圈！':'第 '+e.lap+' 圈'):null,finish:s=>s===view.you?'🏁 冲线！':'搭子冲线了！'};
+const nameOf=s=>view.players.find(p=>p.seat===s)?.name||'对手';
+const EVENT_TEXT={hit:s=>s===view.you?'💫 打滑了！':'💥 '+nameOf(s)+' 中招了！',box:s=>s===view.you?'🎁 抽道具…':null,lap:(s,e)=>s===view.you?(e.lap===view.race.laps?'🔥 最后一圈！':'第 '+e.lap+' 圈'):null,finish:s=>s===view.you?'🏁 冲线！':nameOf(s)+' 冲线了！'};
 function processEvents(race){
   for(const e of race.events){
     if(e.seq<=lastEventSeq)continue;lastEventSeq=e.seq;
@@ -298,9 +306,9 @@ function hud(race,me){
   $('item-name').textContent=rolling?'抽取中…':me.item?ITEM_NAME[me.item]+' · E 使用':'道具箱';
   $('charge').style.width=Math.min(100,(me.charge||0)/1.9*100)+'%';$('charge').dataset.level=me.charge>=1.9?'2':me.charge>=.9?'1':'0';$('drift-meter').hidden=!me.drift;
   $('wrong-way').hidden=true;
-  const peer=view.players.find(p=>p.seat!==view.you);
-  $('banner').hidden=!(transport?.role()!=='solo'&&(connection!=='connected'||peer&&!peer.connected));
-  $('banner').textContent=connection==='closed'?'联机已结束':'搭子连接中断，TA 的车会先滑行…';
+  const lost=view.players.find(p=>!p.ai&&p.seat!==view.you&&!p.connected);
+  $('banner').hidden=!(transport?.role()!=='solo'&&(connection!=='connected'||lost));
+  $('banner').textContent=connection==='closed'?'联机已结束':lost?lost.name+' 连接中断，TA 的车会先滑行…':'正在重连…';
   minimap(track,race);
 }
 const mm=$('minimap'),mg=mm.getContext('2d');let mmTrack=null,mmBox=null;
@@ -318,7 +326,7 @@ function minimap(track,race){
 function assetFor(p){
   if(p.seat===view.you)return {asset:driver.asset,fallback:driver.fallback};
   if(p.ai)return {asset:cpuAsset(p)};
-  return {asset:peerAssets.get(p.signature)||{kind:'toy',species:'mouse',color:p.color}};
+  return {asset:peerAsset(p.signature)||{kind:'toy',species:'mouse',color:p.color}};
 }
 function startCeremony(race){
   ceremonyFor=view.raceNo;audio.play('drumroll');
@@ -367,7 +375,7 @@ async function boot(){
   await setDriver(cached||await C.toyDriver('mouse'),{remember:false});
   if(sdk?.character?.getCurrent)await readPet();
   else if(cached)await setDriver(cached,{remember:false});
-  $('env-note').textContent=sdk?.sessions?'从桌宠打开：可以读取当前形象，也可以通过桌宠「发送并一起玩」联机。':'普通浏览器：可单人对战电脑、导入角色；双人联机需通过桌宠发送并一起玩。';
+  $('env-note').textContent=sdk?.sessions?'从桌宠打开：可以读取当前形象，也可以通过桌宠「发送并一起玩」联机。':'普通浏览器：可单人对战电脑、导入角色；多人联机（最多 4 人）需通过桌宠发送并一起玩。';
   await joinInvitation();
   renderMenus();
 }

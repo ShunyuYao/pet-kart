@@ -27,7 +27,7 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pet-plugin-appearance-peer-d
 const runId = new Date().toISOString().replace(/[:.]/g, '-');
 const evidence = path.join(GAME, 'artifacts/host-e2e', runId);
 const bootstrap = path.join(H.REPO, 'tests/helpers/peer-session-delivery-bootstrap.js');
-const report = { runId, root, scope: 'Actual two hidden production hosts over loopback UDP/TCP/TLS. OS keystore is test AES-GCM only; native Keychain and two physical machines are not covered.', checks: [], failures: [], screenshots: [], dialogs: [], sdkGrants: [], exceptions: [] };
+const report = { runId, root, scope: 'Actual three hidden production hosts (room of host + 2 guests) over loopback UDP/TCP/TLS. OS keystore is test AES-GCM only; native Keychain and two physical machines are not covered.', checks: [], failures: [], screenshots: [], dialogs: [], sdkGrants: [], exceptions: [] };
 const apps = [], sockets = [];
 let runtime;
 const json = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null, 2));
@@ -43,7 +43,7 @@ async function watch(page, label) { const ws = new WebSocket(page.webSocketDebug
 async function key(page, code, type = 'keyDown') { const key = code.startsWith('Key') ? code.slice(3).toLowerCase() : code === 'Space' ? ' ' : code; await H.cdp(page, 'Input.dispatchKeyEvent', { type, key, code, ...(code === 'ArrowDown' ? { windowsVirtualKeyCode: 40 } : code === 'Space' ? { windowsVirtualKeyCode: 32 } : code === 'Enter' ? { text: '\r', windowsVirtualKeyCode: 13 } : {}) }); }
 async function focus(page, selector) { await H.cdp(page, 'Emulation.setFocusEmulationEnabled', { enabled: true }); assert.equal(await H.evalIn(page, `document.querySelector(${JSON.stringify(selector)}).focus();document.activeElement.matches(${JSON.stringify(selector)})`), true); }
 async function input(page, selector, text) { await focus(page, selector); await H.cdp(page, 'Input.insertText', { text }); assert.equal(await H.evalIn(page, `document.querySelector(${JSON.stringify(selector)}).value`), text); }
-async function boot(label, discovery, peerDiscovery) {
+async function boot(label, discovery, peerDiscoveries) {
   const app = { label, profile: path.join(root, label), deviceId: crypto.randomUUID(), name: 'Peer delivery ' + label, cdp: await F.freePort() };
   apps.push(app); fs.mkdirSync(app.profile);
   json(path.join(app.profile, 'device.json'), { deviceId: app.deviceId, name: app.name });
@@ -58,7 +58,7 @@ async function boot(label, discovery, peerDiscovery) {
   app.env = { ...process.env, ELECTRON_RUN_AS_NODE: undefined, PET_USERDATA_DIR: app.profile,
     PET_E2E_TEST: '1', PET_E2E_HIDDEN: '1', PET_E2E_BACKGROUND: '1', PET_DND_TRIGGER_COUNT: '999',
     PET_ACCOUNT_API_BASE: 'http://127.0.0.1:1', PET_ACTIVITY_BRIDGE_PORT: '0',
-    PET_LAN_DISCOVERY_PORT: String(discovery), PET_LAN_DISCOVERY_TARGETS: `127.0.0.1:${peerDiscovery}`,
+    PET_LAN_DISCOVERY_PORT: String(discovery), PET_LAN_DISCOVERY_TARGETS: [].concat(peerDiscoveries).map(p => '127.0.0.1:' + p).join(','),
     PET_E2E_LAN_TCP_PORT: String(await F.freePort()), PET_E2E_TF_PORT: String(await F.freePort()) };
   return launch(app);
 }
@@ -91,6 +91,8 @@ async function sendGame(a, b, {share = false} = {}) {
     const recipient='[data-friend="'+b.deviceId+'"]';
     await wait(()=>H.evalIn(a.overlay,'!!document.querySelector('+JSON.stringify(recipient)+')'),'real discovered recipient');
     if(!await H.evalIn(a.overlay,'document.querySelector('+JSON.stringify(recipient)+').getAttribute("aria-pressed")==="true"'))await activateButton(a.overlay,recipient);
+    // Only this recipient: other discovered devices are invited later from the game's control bar.
+    for(const other of apps.filter(x=>x!==a&&x!==b)){const sel='[data-friend="'+other.deviceId+'"]';if(await H.evalIn(a.overlay,'document.querySelector('+JSON.stringify(sel)+')?.getAttribute("aria-pressed")==="true"'))await activateButton(a.overlay,sel);}
   } else {
     await activateClosingButton(a.cdp, a.dashboard, '.lan-row[data-via="lan"] .lan-errand');
   }
@@ -119,6 +121,9 @@ async function sendGame(a, b, {share = false} = {}) {
   await screenshot(receipt, 'received-game-before-open');
   await activateClosingButton(b.cdp, receipt, '[data-work-open]');
 }
+// Every message the game shows in its error bar (it auto-hides after 7 s, so record rather than poll).
+const recordErrors=page=>H.evalIn(page,'(()=>{if(window.__errorsSeen)return true;window.__errorsSeen=[];const e=document.getElementById("error");new MutationObserver(()=>{if(!e.hidden&&e.textContent)window.__errorsSeen.push(e.textContent);}).observe(e,{attributes:true,childList:true,characterData:true,subtree:true});return true;})()');
+async function assertNoErrors(apps,label){for(const app of apps){const seen=await H.evalIn(app.game,'window.__errorsSeen||[]');assert.deepEqual(seen,[],label+': error bar on '+app.label);}}
 function classifyDialog(init, text) {
   if (['pair', 'accept'].includes(init.peerSessionKind)) return init.peerSessionKind;
   if (text.includes('请求桌宠能力')) return 'sdk';
@@ -137,13 +142,16 @@ async function approvals(a, b, expectPair = true) {
       else { if (kind === 'sdk') {sdk++;report.sdkGrants.push(app.label);} else accepted++; await activateClosingButton(app.cdp, page, '.btn-primary'); }
     }
     if (pairing.size === 2 && !paired) { const [left, right] = [...pairing.values()]; assert.equal(left.code, right.code); assert.equal(left.code.length, 16); await activateClosingButton(left.app.cdp, left.page, '.btn-primary'); await activateClosingButton(right.app.cdp, right.page, '.btn-primary'); paired = true; check('both independently presented TLS pairing codes match before explicit confirmations'); }
-    const pages = await Promise.all([a, b].map(async app => { const page = (await targets(app)).find(t => t.url.startsWith('pet-work:') && !t.url.includes('thumbnail=1')); if (!page) return null; if(app.game?.id!==page.id){app.game=page;await H.cdp(page,'Emulation.setFocusEmulationEnabled',{enabled:true});await H.cdp(page,'Page.captureScreenshot',{format:'png'});} const ready = await H.evalIn(page, 'window.__kart?.state.view?.players?.length === 3 && !document.querySelector("#ready").disabled', 3000).catch(() => false); if (ready) { app.game = page; return page; } return null; }));
+    const pages = await Promise.all([a, b].map(async app => { const page = (await targets(app)).find(t => t.url.startsWith('pet-work:') && !t.url.includes('thumbnail=1')); if (!page) return null; if(app.game?.id!==page.id){app.game=page;await H.cdp(page,'Emulation.setFocusEmulationEnabled',{enabled:true});await H.cdp(page,'Page.captureScreenshot',{format:'png'});await recordErrors(page);} const ready = await H.evalIn(page, 'window.__kart?.state.view?.players?.length === 4 && window.__kart.state.view.players.some(p=>p.seat===window.__kart.state.view.you) && !document.querySelector("#ready").disabled', 3000).catch(() => false); if (ready) { app.game = page; return page; } return null; }));
     return pages.every(Boolean);
   }, 'invitation, first pairing, SDK permission and current pets', 65000);
   assert(accepted >= 1, 'recipient must accept each game invitation'); assert(!expectPair || paired); if(expectPair)assert([a.label,b.label].every(label=>report.sdkGrants.includes(label)), 'both fresh hosts require explicit SDK consent, including initial share-only approval');
   for (const app of [a, b]) { await watch(app.game, app.label + '-game'); assert.equal(await H.evalIn(app.game, '!document.querySelector("#server-address,#room-code") && document.querySelector("#title-panel").hidden'), true); const context = await H.evalIn(app.game, 'pet.sessions.getContext()'); assert.equal(context.role, app === a ? 'host' : 'guest'); assert.equal(context.artifactHash, hash(source)); app.context = context; }
-  assert.equal(a.context.invitationId, b.context.invitationId);
-  check('real invite binds both current pets and exact artifact to sender referee and receiver guest');
+  // The host context keeps the first invitation; each later guest has its own, listed in the host's peers.
+  if (a.context.peers.length === 1) assert.equal(a.context.invitationId, b.context.invitationId);
+  assert.equal(a.context.maxPlayers, 4); assert.equal(b.context.maxPlayers, 4);
+  assert(a.context.peers.some(p => p.displayName === b.name && p.status === 'connected'), 'host lists this guest as connected');
+  check('real invite binds ' + b.label + ' to the host room: exact artifact, host referee, guest seat');
 }
 async function installAppearances(app) {
   await H.evalIn(app.pet, 'petAPI.openSettings("plugins");true');
@@ -203,90 +211,104 @@ async function importDoll(app){
   const ws=new WebSocket(app.game.webSocketDebuggerUrl);await new Promise(r=>ws.onopen=r);let n=0;const call=(method,params)=>new Promise((res,rej)=>{const id=++n;ws.addEventListener('message',function f(e){const m=JSON.parse(e.data);if(m.id===id){ws.removeEventListener('message',f);m.error?rej(Error(JSON.stringify(m.error))):res(m.result);}});ws.send(JSON.stringify({id,method,params}));});
   const {result}=await call('Runtime.evaluate',{expression:'document.querySelector("#import-file")'});await call('DOM.setFileInputFiles',{files:[file],objectId:result.objectId});ws.close();
 }
-async function kartPlay(a,b){
-  a.b=null;b.b=b;
-  const expectedKind=process.env.KART_EXPECT_3D==='1'?'doll3d':'sprite';
-  for(const [app,id] of [[a,'rat-doll-male'],[b,'rat-doll-female']]){
-    const s=await wait(async()=>{const x=await state(app);return x.driver?.kind===expectedKind&&x.view?.players?.length===3?x:null;},'driver + lobby '+app.label);
-    assert.equal(s.driver.kind,expectedKind);assert.equal(s.view.you,app===a?0:1);
-    const packName=JSON.parse(fs.readFileSync(path.join(PACKS,'../exports/plugins',id,'character.json'))).name;
-    assert.equal(s.driver.name,[...packName].slice(0,16).join(''),'driver name comes from current desktop pet');
-    assert.equal(await H.evalIn(app.game,'document.querySelector("#pet-auto").hidden'),false);
-    await wait(async()=>{const d=(await world(app)).drivers;return d.length===3&&d.filter(x=>x.seat!==2).every(x=>x.kind===expectedKind)&&d.find(x=>x.seat===2)?.kind==='toy';},'both pets as '+expectedKind+' drivers + computer toy on '+app.label,30000);
+async function inviteFromControls(a,c){
+  // The host's work-player control bar ("+ Invite n/4") invites a third device into the open room.
+  const previous=new Set(activity(c).records.map(r=>r.id));
+  const controls=await H.findTarget(a.cdp,'/work-player.html');
+  await wait(async()=>{const b=await H.evalIn(controls,'(()=>{const b=document.querySelector("[data-work-invite]");return b&&!b.disabled&&b.textContent})()');return b&&b.includes('2/4');},'host invite control enabled at 2/4');
+  await screenshot(controls,'10-host-controls-2of4');
+  const gameId=a.game.id,origin=await H.evalIn(a.game,'performance.timeOrigin');
+  await activateButton(controls,'[data-work-invite]');
+  const picker=await wait(async()=>{for(const page of (await targets(a)).filter(t=>t.url.includes('/dialog.html'))){const init=await H.evalIn(page,'dialogAPI.getInit()',3000).catch(()=>null);if(init?.peerSessionKind==='room-invite'&&await H.evalIn(page,'!!document.querySelector(".btn-primary")'))return page;}return null;},'device picker');
+  const text=await H.evalIn(picker,'document.body.innerText');assert(text.includes(c.name)&&!text.includes(apps[1].name),'picker offers only devices not yet in the room');
+  await screenshot(picker,'11-room-invite-picker');await activateClosingButton(a.cdp,picker,'.btn-primary');
+  const incoming=await wait(()=>activity(c).records.find(r=>!previous.has(r.id)&&r.direction==='incoming'&&r.file?.name===path.basename(source)&&r.file.savedPath&&fs.existsSync(r.file.savedPath)),'third device receives the same HTML',45000);
+  assert.equal(hash(incoming.file.savedPath),hash(source));
+  const receipt=await wait(async()=>{for(const page of (await targets(c)).filter(t=>t.url.includes('/dialog.html')))if(await H.evalIn(page,'!!document.querySelector("[data-work-open]")').catch(()=>false))return page;return null;},'work receipt on c');
+  await activateClosingButton(c.cdp,receipt,'[data-work-open]');
+  await approvals(a,c);
+  assert.equal(a.game.id,gameId);assert.equal(await H.evalIn(a.game,'performance.timeOrigin'),origin,'host game never reloaded');
+  check('control-bar invite brings a third host into the open room without reloading the host game');
+}
+async function kartPlay(a,b,c){
+  const guests=[b,c],all=[a,b,c];
+  const expected=process.env.KART_EXPECT_3D==='1'?'doll3d':'sprite';
+  const kindOf={a:expected,b:expected,c:'sprite'};// c keeps its built-in 2D character
+  for(const [app,seat] of [[a,0],[b,1],[c,2]]){
+    const s=await wait(async()=>{const x=await state(app);return x.driver?.kind===kindOf[app.label]&&x.view?.you===seat&&x.view.players.filter(p=>!p.ai).length===3?x:null;},'driver + 3-human lobby '+app.label,45000);
+    assert.equal(s.view.players.length,4);assert.deepEqual(s.view.players.map(p=>[p.seat,!!p.ai]),[[0,false],[1,false],[2,false],[3,true]]);
+    await wait(async()=>{const d=(await world(app)).drivers;return d.length===4&&[0,1,2].every(n=>d.find(x=>x.seat===n)?.kind===kindOf['abc'[n]])&&d.find(x=>x.seat===3)?.kind==='toy';},'every driver rendered with its own kind on '+app.label,60000);
   }
-  const names=[(await state(a)).driver.name,(await state(b)).driver.name];
-  assert.deepEqual((await state(b)).view.players.filter(p=>!p.ai).map(p=>p.name),names);assert.equal((await state(b)).view.players.filter(p=>p.ai).length,1,'one computer driver');
-  check('both hosts auto-import current desktop pets without manual import: '+expectedKind,names);
-  await screenshot(a.game,'01-lobby-host');await screenshot(b.game,'02-lobby-guest');
-  // Optional 3D swap on the guest travels to the host as one transfer.
+  const names=all.map(x=>null);for(const [i,app] of all.entries())names[i]=(await state(app)).driver.name;
+  for(const app of all)assert.deepEqual((await state(app)).view.players.filter(p=>!p.ai).map(p=>p.name),names);
+  check('three hosts in one room: seats 0/1/2 in arrival order, one computer fills seat 3, avatars relayed to everyone',{names,kinds:kindOf});
+  for(const app of all)await screenshot(app.game,'12-lobby-'+app.label);
+  // A 3D swap on guest b reaches guest c through the host relay.
   await importDoll(b);
-  await wait(async()=>(await state(b)).driver.kind==='doll3d','guest imported 3D doll',60000);
-  await wait(async()=>(await world(a)).drivers.find(d=>d.seat===1)?.kind==='doll3d','host renders guest as 3D doll',60000);
-  check('guest 3D rag-doll pack crosses the LAN transfer and host renders it in 3D');
-  await screenshot(a.game,'03-host-sees-guest-3d');
-  // Host picks track; guest can't.
+  await wait(async()=>(await state(b)).driver.kind==='doll3d','guest b imported 3D doll',60000);
+  await wait(async()=>(await world(c)).drivers.find(d=>d.seat===1)?.kind==='doll3d','guest c renders guest b as 3D doll (host relay)',60000);
+  check('guest-to-guest avatar change is relayed by the host');
   assert.equal(await H.evalIn(b.game,'document.querySelector(\'[data-track="yarn"]\').disabled'),true);
   await activateButton(a.game,'[data-track="yarn"]');
-  await wait(async()=>(await state(b)).view.trackId==='yarn','guest sees host track');
-  await activateButton(a.game,'#ready');await H.sleep(400);assert.equal((await state(b)).view.race,null);
-  check('host-only track choice; one ready does not start');
-  await activateButton(b.game,'#ready');
-  await wait(async()=>(await state(a)).view.race?.phase==='countdown'&&(await state(b)).view.race?.phase==='countdown','both countdown');
-  for(const app of [a,b]){await H.evalIn(app.game,'document.activeElement?.blur();true');await k(app.game,'ArrowUp');}
+  await wait(async()=>(await state(c)).view.trackId==='yarn','guests see host track');
+  await activateButton(a.game,'#ready');await activateButton(b.game,'#ready');await H.sleep(400);
+  assert.equal((await state(c)).view.race,null,'two of three ready does not start');
+  await activateButton(c.game,'#ready');
+  await wait(async()=>{for(const app of all)if((await state(app)).view.race?.phase!=='countdown')return false;return true;},'all countdown');
+  assert.equal((await state(a)).view.race.karts.length,4);
+  check('host-only track; the race starts only when all three humans are ready; four karts on the grid');
+  for(const app of all){await H.evalIn(app.game,'document.activeElement?.blur();true');await k(app.game,'ArrowUp');}
   await wait(async()=>(await state(a)).view.race.phase==='racing','go');await H.sleep(2500);
-  let host=(await state(a)).view.race;
-  assert(host.karts.every(x=>x.dist>35),'both karts driven by their own real keyboards '+JSON.stringify(host.karts.map(x=>x.dist)));
-  check('both real keyboards drive; host simulation moves guest kart from guest intents',host.karts.map(x=>Math.round(x.dist)));
-  const g=await state(b);assert(g.pred&&Math.hypot(g.pred.x-host.karts[1].x,g.pred.z-host.karts[1].z)<12,'guest prediction tracks host authority');
-  check('guest local prediction stays within a few metres of the authoritative kart');
-  await screenshot(b.game,'04-guest-racing');await screenshot(a.game,'05-host-racing');
-  // Main pet change mid-race propagates to the peer.
+  const host=(await state(a)).view.race;
+  assert([0,1,2].every(n=>host.karts.find(x=>x.seat===n).dist>30),'each human kart driven by its own keyboard '+JSON.stringify(host.karts.map(x=>[x.seat,x.dist|0])));
+  check('three real keyboards drive their own karts through the host simulation',host.karts.map(x=>[x.seat,Math.round(x.dist)]));
+  for(const [app,seat] of [[b,1],[c,2]]){const g=await state(app),auth=host.karts.find(x=>x.seat===seat);assert(g.pred&&Math.hypot(g.pred.x-auth.x,g.pred.z-auth.z)<14,'guest prediction tracks host '+app.label);}
+  for(const app of all)await screenshot(app.game,'13-racing-'+app.label);
   await applyMain(a,'rat-doll-female');
-  await wait(async()=>(await state(b)).view.players[0].name!==names[0],'host pet change reaches guest',30000);
-  check('host changes desktop pet mid-race; guest sees new driver without leaving the race',(await state(b)).view.players[0].name);
-  // Race with autopilot keys; guest uses item when one is held.
-  const held={a:{},b:{}};let usedItem=false;
-  const clock0={wall:Date.now(),race:(await state(a)).view.race.t};
+  await wait(async()=>(await state(b)).view.players[0].name!==names[0]&&(await state(c)).view.players[0].name!==names[0],'host pet change reaches both guests',30000);
+  check('host changes desktop pet mid-race; both guests see the new driver');
+  const held={a:{},b:{},c:{}};let usedItem=false;
   await wait(async()=>{
-    const pa=await autopilot(a,held.a),pb=await autopilot(b,held.b);
-    if(pa&&(!report.samples||Date.now()-report.samples.at(-1).w>3000))(report.samples??=[]).push({w:Date.now(),a:[pa.dist|0,pa.speed|0],b:pb&&[pb.dist|0,pb.speed|0],raf:await a.cdpS.evaluate('window.__rafCount||0')});
-    if(!usedItem&&pb?.item&&!pb.rolling){await b.cdpS.press('KeyE');usedItem=pb.item;}
-    return pa?.phase==='results'&&pb?.phase==='results';
-  },'race to results with real keys',240000);
-  for(const app of [a,b]){for(const key of ['ArrowUp','ArrowLeft','ArrowRight'])await k(app.game,key,'keyUp');app.cdpS?.close();}
-  report.clock={wallMs:Date.now()-clock0.wall,raceMs:(await state(a)).view.race.t-clock0.race};
-  if(usedItem){const ev=(await state(a)).view.race;check('guest item used over LAN',{item:usedItem});}
-  // Both peers play the podium ceremony with the same order before their results panels.
-  const ca=await wait(async()=>{const c=(await world(a)).ceremony;return c.active&&c.ready&&c.t>4600?c:null;},'host ceremony',20000);
-  const cb=await wait(async()=>{const c=(await world(b)).ceremony;return c.active&&c.ready&&c.t>4600?c:null;},'guest ceremony',20000);
-  const order=c=>c.actors.slice().sort((x,y)=>x.place-y.place).map(x=>x.seat);
-  assert.deepEqual(order(ca),order(cb));assert.equal(ca.actors.length,3);
-  assert.equal(ca.actors.find(x=>x.seat===1).kind,'doll3d','guest 3D doll stands on the host podium');
-  await screenshot(a.game,'06a-ceremony-host');await screenshot(b.game,'06b-ceremony-guest');
-  check('both peers show the podium ceremony with identical order',{order:order(ca),kinds:ca.actors.map(x=>[x.seat,x.kind])});
-  for(const app of [a,b])await wait(async()=>(await state(app)).mode==='results','results after ceremony '+app.label,15000);
-  const ra=(await state(a)).view.race,rb=(await state(b)).view.race;
-  assert.deepEqual(ra.karts.map(x=>x.place),rb.karts.map(x=>x.place));assert(ra.karts.some(x=>x.finishedAt));
-  check('both peers show identical results',ra.karts.map(x=>({seat:x.seat,place:x.place,ms:x.finishedAt})));
-  await screenshot(a.game,'06-results-host');await screenshot(b.game,'07-results-guest');
+    const p={};for(const app of all)p[app.label]=await autopilot(app,held[app.label]);
+    if(!usedItem&&p.c?.item&&!p.c.rolling){await c.cdpS.press('KeyE');usedItem=p.c.item;}
+    return all.every(app=>p[app.label]?.phase==='results');
+  },'race to results with real keys',300000);
+  for(const app of all){for(const key of ['ArrowUp','ArrowLeft','ArrowRight'])await k(app.game,key,'keyUp');app.cdpS?.close();}
+  if(usedItem)check('second guest used an item over LAN',{item:usedItem});
+  const cers=[];for(const app of all)cers.push(await wait(async()=>{const x=(await world(app)).ceremony;return x.active&&x.ready&&x.t>4600?x:null;},'ceremony '+app.label,20000));
+  const order=x=>x.actors.slice().sort((p,q)=>p.place-q.place).map(p=>p.seat);
+  const podiumKind=seat=>seat===3?'toy':seat===2?'sprite':expected==='doll3d'||seat===1?'doll3d':'sprite';
+  for(const x of cers){assert.equal(x.actors.length,3);assert.deepEqual(order(x),order(cers[0]));for(const actor of x.actors)assert.equal(actor.kind,podiumKind(actor.seat),'podium avatar kind for seat '+actor.seat);}
+  for(const app of all)await screenshot(app.game,'14-ceremony-'+app.label);
+  check('all three hosts show the same podium order with every driver in its own avatar',{order:order(cers[0]),kinds:cers.map(x=>x.actors.map(a=>[a.seat,a.kind]))});
+  await assertNoErrors(all,'race');check('no error message shown on any host through lobby, race and podium');
+  for(const app of all)await wait(async()=>(await state(app)).mode==='results','results after ceremony '+app.label,15000);
+  const places=[];for(const app of all)places.push((await state(app)).view.race.karts.map(x=>[x.seat,x.place]));
+  assert.deepEqual(places[1],places[0]);assert.deepEqual(places[2],places[0]);
+  check('identical results on all three hosts',places[0]);
+  for(const app of all)await screenshot(app.game,'15-results-'+app.label);
+  // Guest c leaves at the results screen: its seat goes back to a computer; host and b carry on.
+  await activateButton(c.game,'#leave');
+  await wait(async()=>{const v=(await state(a)).view;return !v.players.some(p=>!p.ai&&p.seat===2)&&v.players.length===4&&(await state(a)).connection==='connected';},'seat 2 back to a computer, room still open',20000);
+  await wait(async()=>(await state(b)).view.players.find(p=>p.seat===2)?.ai===true,'b sees the computer in seat 2');
+  check('a guest leaving frees its seat for a computer while the others stay connected');
   await activateButton(a.game,'[data-next-track="cheese"]');await activateButton(a.game,'#again');await activateButton(b.game,'#again');
-  await wait(async()=>(await state(b)).view.race?.phase==='countdown'&&(await state(b)).view.race.trackId==='cheese','rematch');
-  check('mutual rematch on host-chosen next track');
-  await activateButton(b.game,'#leave');
-  await wait(async()=>(await state(a)).connection==='closed','host sees guest leave',15000);
-  assert.match(await H.evalIn(a.game,'document.body.innerText'),/联机已结束|已离开|邀请已结束/);
-  await screenshot(a.game,'08-guest-left');check('guest leave gives host an explicit ended state');
+  await wait(async()=>(await state(b)).view.race?.phase==='countdown'&&(await state(b)).view.race.trackId==='cheese','rematch with the remaining humans');
+  check('rematch with the remaining two humans on the host-chosen track');
   await closeWork(a);
+  await wait(async()=>(await state(b)).connection==='closed','host close ends the room for b',15000);
+  await screenshot(b.game,'16-host-closed');check('host closing the game ends the room for the remaining guest');
 }
 (async()=>{
   fs.mkdirSync(evidence,{recursive:true});
   try{
     H.requireNode22();assert(fs.existsSync(source),'build first');report.gameSha256=hash(source);
     runtime=F.freeze(H.REPO,root,false);report.source=runtime.source;
-    const ap=await F.freePort(),bp=await F.freePort(),a=await boot('a',ap,bp),b=await boot('b',bp,ap);
+    const ap=await F.freePort(),bp=await F.freePort(),cp=await F.freePort();
+    const a=await boot('a',ap,[bp,cp]),b=await boot('b',bp,[ap,cp]),c=await boot('c',cp,[ap,bp]);
     for(const app of [a,b])await installAppearances(app);
     await applyMain(a,'rat-doll-male');await applyMain(b,'rat-doll-female');
-    await sendGame(a,b);await approvals(a,b);await kartPlay(a,b);
+    await nearby(a,c);await sendGame(a,b);await approvals(a,b);await inviteFromControls(a,c);await kartPlay(a,b,c);
   }catch(error){
     report.failures.push(error.message);report.error=error.stack;console.error(error);
     for(const app of apps){const list=await targets(app).catch(()=>[]);json(path.join(evidence,app.label+'-targets.json'),list.map(t=>({type:t.type,url:t.url,title:t.title})));

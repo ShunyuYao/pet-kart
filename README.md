@@ -1,14 +1,14 @@
 # 桌宠赛车 · Pet Kart
 
-一个单文件 HTML 的 3D 卡丁车游戏，给「吐梨邦」桌宠的 HTML 作品能力做的。在桌宠里打开会自动带入你当前的桌宠形象当车手；通过桌宠「发送并一起玩」可以和同一局域网的朋友对战。
+一个单文件 HTML 的 3D 卡丁车游戏，给「吐梨邦」桌宠的 HTML 作品能力做的。在桌宠里打开会自动带入你当前的桌宠形象当车手；通过桌宠「发送并一起玩」可以和同一局域网的朋友对战，最多 4 人同局。
 
-A single-file HTML 3D kart racer for the 吐梨邦 desktop pet. Opened inside the pet it races your current pet; "send and play together" gives a two-player LAN match.
+A single-file HTML 3D kart racer for the 吐梨邦 desktop pet. Opened inside the pet it races your current pet; "send and play together" starts a LAN room of up to 4 players; more friends join from the game window's "+ Invite" control.
 
 交付文件：[`dist/桌宠赛车.html`](dist/桌宠赛车.html)（约 720 KB，three.js 与全部代码内联，无 CDN、无服务器）。
 
 ## 玩法
 
-- 每场 3 辆车，3 圈：单人是你 + 2 个电脑；双人是 2 位玩家 + 1 个电脑（由房主模拟）。
+- 3 圈。单人：你 + 2 个电脑。联机：4 辆车，真人不足 4 位时由房主模拟的电脑车手补满；发车格两排错位。
 - 键位：↑/W 油门 · ↓/S 刹车 · ←→ 转向 · 空格/Shift 漂移 · E/X 道具；支持手柄。
 - 漂移蓄力松开得蓝 / 橙涡轮；倒数到「1」时踩油门是火箭起步；加速带。
 - 道具箱：🍄 加速蘑菇 / 🍌 香蕉皮 / 🧶 追踪毛线球；落后者更容易抽到好道具；已有道具时再吃会重新抽取替换。
@@ -29,7 +29,14 @@ A single-file HTML 3D kart racer for the 吐梨邦 desktop pet. Opened inside th
 
 ## 联机
 
-房主权威：房主运行规则（`game/room.cjs`、`game/sim.cjs`），客人只发操作意图；客人本地预测自己的车并向房主结果收敛，对手车延迟插值显示。使用宿主 `pet.sessions`（HTML 作品专用实验能力），遵守其限额。当前宿主一次邀请只能连 2 位真人。
+1. 在桌宠聊天里把这份 HTML「发送并一起玩」给一位朋友，双方核对设备、同意后进入大厅。
+2. 想再拉人：点游戏窗口顶部控制栏的「＋ 邀请 n/4」，选同一局域网里的另一台桌宠。游戏窗口不会重开，已在大厅里的人不受影响。一次等一位回应。
+3. 比赛进行中加入的朋友先观战，本局结算后顶替一位电脑车手上场；中途离开的人，座位在结算后还给电脑。
+4. 房主关窗或离开，整局结束。
+
+房主权威：房主运行规则（`game/room.cjs`、`game/sim.cjs`），客人只发操作意图；客人本地预测自己的车并向房主结果收敛，其他车延迟插值显示。星形拓扑：客人之间不直连，房主用 `to` / `from` 区分客人，并把每位车手的形象转发给其他人。使用宿主 `pet.sessions`（HTML 作品专用实验能力，协议 `pet-kart` v2，声明 `players: 4`），每位客人一条会话，分别遵守其限额。
+
+需要支持多人房间（`players` 3–4）的宿主。旧宿主只接受 2 人声明，会拒绝整份作品：0.4 在旧宿主上连单人模式也打不开。旧宿主请用 [v0.3.0](https://github.com/ShunyuYao/pet-kart/tree/v0.3.0)（2 人版）。0.3 与 0.4 协议不同，不能混玩。
 
 ## 开发
 
@@ -37,7 +44,7 @@ A single-file HTML 3D kart racer for the 吐梨邦 desktop pet. Opened inside th
 npm run build          # esbuild 打包成单个内联脚本（需要 esbuild，可用 PET_KART_ESBUILD 指定）
 npm run test:rules     # 规则与联机协议（Node）
 npm run test:browser   # 隐藏 Electron 打开最终 HTML，CDP 真实键盘
-npm run test:host      # 两个真实桌宠宿主实例的局域网 E2E（需要宿主源码与本地角色包）
+npm run test:host      # 三个真实桌宠宿主实例的局域网 E2E：聊天发送 + 控制栏邀请，3 人同局（需要宿主源码与本地角色包）
 npm run test:installed # 已安装宿主 + 当前形象只读副本
 ```
 
