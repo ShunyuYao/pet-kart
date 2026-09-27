@@ -36,7 +36,7 @@ A single-file HTML 3D kart racer for the 吐梨邦 desktop pet. Opened inside th
 
 房主权威：房主运行规则（`game/room.cjs`、`game/sim.cjs`），客人只发操作意图；客人本地预测自己的车并向房主结果收敛，其他车延迟插值显示。星形拓扑：客人之间不直连，房主用 `to` / `from` 区分客人，并把每位车手的形象转发给其他人。使用宿主 `pet.sessions`（HTML 作品专用实验能力，协议 `pet-kart` v2，声明 `players: 4`），每位客人一条会话，分别遵守其限额。
 
-需要支持多人房间（`players` 3–4）的宿主。旧宿主只接受 2 人声明，会拒绝整份作品：0.4 在旧宿主上连单人模式也打不开。旧宿主请用 [v0.3.0](https://github.com/ShunyuYao/pet-kart/tree/v0.3.0)（2 人版）。0.3 与 0.4 协议不同，不能混玩。
+需要支持多人房间（`players` 3–4）的宿主：吐梨邦测试版 0.26.0-internal.6 起支持，正式版暂不支持。旧宿主只接受 2 人声明，会拒绝整份作品：0.4 在旧宿主上连单人模式也打不开。旧宿主请用 [v0.3.0](https://github.com/ShunyuYao/pet-kart/tree/v0.3.0)（2 人版）。0.3 与 0.4 协议不同，不能混玩。
 
 ## 开发
 
