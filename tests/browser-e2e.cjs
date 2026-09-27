@@ -52,6 +52,9 @@ async function wait(p,expr,label,ms=20000){const until=Date.now()+ms;let last;wh
     let me=(await st()).view.race.karts[0];check(me.dist>40&&me.speed>25,'holding ↑ drives forward along the road',{dist:me.dist,speed:me.speed});
     check((await st()).view.race.events.some(e=>e.type==='boost'&&e.kind==='rocket'&&e.seat===0),'throttle at "1" gives rocket start');
     await shot('03-racing-3d');
+    // Baseline for the long tracks: draw calls and frame rate on the first track.
+    const fps=async()=>{const a=await p.evaluate('window.__rafCount');await sleep(2000);return ((await p.evaluate('window.__rafCount'))-a)/2;};
+    const base={calls:(await w()).calls,fps:await fps()};
     // steer left: yaw increases (right is −yaw).
     const y0=(await st()).view.race.karts[0].yaw;await p.key('ArrowLeft');await sleep(350);await p.key('ArrowLeft','keyUp');
     const y1=(await st()).view.race.karts[0].yaw;check(y1>y0+.1,'← steers left',{y0,y1});
@@ -108,6 +111,28 @@ async function wait(p,expr,label,ms=20000){const until=Date.now()+ms;let last;wh
     // back to title keeps the driver
     await p.activate('#leave');await wait(p,'window.__kart.state.mode==="title"','title again');
     check((await st()).driver.kind==='doll3d','leaving keeps chosen 3D driver');
+    // --- the three long tracks: difficulty on the cards, and each one races and renders ---
+    await p.activate('#solo');await wait(p,'window.__kart.state.mode==="lobby"','lobby for the long tracks');
+    const cards=await p.evaluate('[...document.querySelectorAll("#track-list .track-card")].map(b=>({id:b.dataset.track,text:b.textContent}))');
+    check(cards.map(c=>c.id).join()==='cheese,yarn,city,snow,volcano','five tracks, easiest first',cards.map(c=>c.id));
+    check(cards.every((c,i)=>c.text.includes('★'.repeat(i+1)+'☆'.repeat(4-i))),'every card shows its difficulty in stars',cards.map(c=>c.text));
+    check(['入门','简单','进阶','困难','极难'].every((l,i)=>cards[i].text.includes(l)),'difficulty labels 入门 → 极难');
+    const km=cards.map(c=>Number(/(\d+\.\d) km/.exec(c.text)?.[1]));
+    check(km.every(Number.isFinite)&&Math.min(...km.slice(2))>=1.6*Math.max(...km.slice(0,2)),'cards show the length; new tracks are much longer',km);
+    for(const [n,id] of ['city','snow','volcano'].entries()){
+      if(n){await p.activate('#solo');await wait(p,'window.__kart.state.mode==="lobby"','lobby again');}
+      await p.activate(`[data-track="${id}"]`);await wait(p,`window.__kart.state.view.trackId==="${id}"`,'pick '+id);
+      check(await p.evaluate(`document.querySelector('[data-track="${id}"]').getAttribute('aria-pressed')==='true'`),id+' card selected');
+      await p.activate('#ready');await wait(p,'window.__kart.state.view.race?.phase==="countdown"',id+' countdown');
+      check((await w()).track===id,id+' is the track on screen');
+      await wait(p,'window.__kart.state.view.race.countdown<500',id+' last moment',6000);await p.key('ArrowUp');
+      await wait(p,'window.__kart.state.view.race.phase==="racing"',id+' go');await sleep(3000);
+      const me=(await st()).view.race.karts[0];check(me.dist>40,'holding ↑ drives forward on '+id,{dist:me.dist,speed:me.speed});
+      const now={calls:(await w()).calls,fps:await fps()};await shot('08-'+id);await p.key('ArrowUp','keyUp');
+      check(now.calls<=base.calls*1.6+120,id+' draw calls stay close to the first track',{base,now});
+      check(now.fps>=Math.min(30,base.fps*.6),id+' frame rate holds up',{base,now});
+      await p.activate('#leave');await wait(p,'window.__kart.state.mode==="title"','back to title from '+id);
+    }
     check(report.errors.length===0,'no uncaught page exceptions',report.errors);
     report.ok=true;
   }catch(e){report.ok=false;report.failure=e.stack;console.error(e.stack);if(p)await shot('failure').catch(()=>{});process.exitCode=1;}

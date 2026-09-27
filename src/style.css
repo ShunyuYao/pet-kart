@@ -63,6 +63,9 @@ h2{font-size:24px;margin:6px 0 14px}
 .tracks{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
 .track-card{border:0;text-align:left;border-radius:16px;padding:12px 14px;background:#f1eff8;display:flex;flex-direction:column;gap:3px}
 .track-card small{color:#6d6a80;font-size:12px}
+.track-level{font-size:12px;font-weight:700;letter-spacing:.02em;color:#c98a00}
+.track-level[data-level='4']{color:#e2582b}.track-level[data-level='5']{color:#d4213d}
+.track-card[aria-pressed=true] .track-level{color:#ffd166}
 .track-card[aria-pressed=true]{background:#1d1b2e;color:#fff}
 .track-card[aria-pressed=true] small{color:#c9c5e6}
 .hud{position:fixed;inset:0;pointer-events:none;z-index:3;color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.35)}

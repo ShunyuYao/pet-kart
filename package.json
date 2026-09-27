@@ -1,12 +1,12 @@
 {
   "name": "pet-kart",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "license": "MIT",
   "description": "桌宠赛车：可导入桌宠 2D/3D 形象的 3D 卡丁车单文件 HTML 游戏，支持局域网最多 4 人",
   "scripts": {
     "build": "node scripts/build.cjs",
-    "test:rules": "node --test tests/sim.test.cjs tests/net.test.cjs",
+    "test:rules": "node --test tests/sim.test.cjs tests/net.test.cjs tests/tracks.test.cjs",
     "test:browser": "node tests/browser-e2e.cjs",
     "test:host": "node tests/host-e2e.cjs",
     "test:installed": "node tests/installed-e2e.cjs",

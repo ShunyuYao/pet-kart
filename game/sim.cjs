@@ -5,7 +5,10 @@
   'use strict';
   const K={max:30,accel:22,brake:40,reverse:9,coast:5,offMax:15,turn:2.05,driftTurn:1.25,driftExtra:.85,
     boostMax:40,boostAccel:48,spin:1.15,radius:1.25,itemRadius:2.3,hazardRadius:1.6,yarnSpeed:46,yarnLife:4.5,
-    mini:[.9,1.9],miniBoost:[.7,1.25],mushroom:1.35,pad:.9,rocket:.9};
+    mini:[.9,1.9],miniBoost:[.7,1.25],mushroom:1.35,pad:.9,rocket:.9,
+    // Slopes: gravity along the road (m/s² per unit grade) and how far the top speed
+    // moves with the grade (m/s per unit grade, capped).
+    slope:18,slopeMax:40,slopeCap:[-5,2.5]};
   const LAPS=3,COUNTDOWN=3200,FINISH_GRACE=20000,BOX_RESPAWN=3000,ROLL_MS=1100;
   const ITEMS=['mushroom','banana','yarn'];
   const clamp=(v,a,b)=>v<a?a:v>b?b:v;
@@ -23,7 +26,8 @@
   function makeKart(track,seat,slot,count){
     // Grid just behind the start line (s = 0): up to three karts side by side; four
     // karts start in two rows of two, the second row far enough back not to rear-end.
-    const four=count>3,lane=four?[-6,2,-2,6][slot]:[-5,5,0][slot],back=8+(four?(slot>1?9:0):(slot===2?1.5:0));
+    // Narrow roads squeeze the lanes so every kart starts on the tarmac.
+    const four=count>3,fit=Math.min(1,(track.half-1.2)/6),lane=(four?[-6,2,-2,6][slot]:[-5,5,0][slot])*fit,back=8+(four?(slot>1?9:0):(slot===2?1.5:0));
     const p=T.at(track,track.N-back,lane);
     return {seat,x:p.x,y:p.y,z:p.z,yaw:p.yaw,speed:0,slide:0,steer:0,idx:T.wrap(Math.round(track.N-back),track.N),lat:lane,
       dist:-back,lap:0,item:null,rollUntil:0,itemUsed:0,boost:0,boostKind:'',spin:0,drift:0,driftDir:0,charge:0,
@@ -46,7 +50,10 @@
     if(k.spin>0){k.spin=Math.max(0,k.spin-dt);k.speed*=Math.pow(.2,dt);k.drift=0;k.charge=0;}
     const control=k.spin<=0;
     k.boost=Math.max(0,k.boost-dt);
-    let max=k.boost>0?K.boostMax:K.max;if(k.off&&!k.boost)max=K.offMax;
+    // Grade under the kart, positive when the nose points uphill.
+    const fwd=Math.sign(Math.cos(k.yaw-Math.atan2(track.tx[k.idx|0]||0,track.tz[k.idx|0]||1))||1),grade=fwd*(T.sampleY(track,k.dist+2)-T.sampleY(track,k.dist-2))/4;
+    let max=k.boost>0?K.boostMax:K.max;if(k.off&&!k.boost)max=track.offMax;
+    max+=clamp(-grade*K.slopeMax,K.slopeCap[0],K.slopeCap[1]);
     // Steering responds quickly but not instantly, which also smooths network input.
     k.steer+=(clamp(inp.steer,-1,1)-k.steer)*Math.min(1,dt*12);
     if(control){
@@ -55,6 +62,7 @@
       else k.speed-=Math.sign(k.speed)*Math.min(Math.abs(k.speed),K.coast*dt);
       if(k.boost>0&&k.speed<max)k.speed=Math.min(max,k.speed+K.boostAccel*dt);
     }
+    if(k.spin<=0&&k.speed>0)k.speed-=grade*K.slope*dt;
     if(k.speed>max)k.speed=Math.max(max,k.speed-(k.off?40:18)*dt);
     // Drift: hold drift while steering at speed. Charge grows; release fires a mini-turbo.
     if(control&&inp.drift&&k.speed>11&&(k.drift||Math.abs(inp.steer)>.3)){
@@ -67,12 +75,14 @@
     }
     const speedFactor=clamp(Math.abs(k.speed)/9,0,1)*(1-.3*clamp(Math.abs(k.speed)/K.boostMax,0,1));
     let yawRate;
-    if(k.drift)yawRate=k.driftDir*(K.driftTurn+K.driftExtra*k.steer*k.driftDir)*clamp(k.speed/14,0,1);
-    else yawRate=k.steer*K.turn*speedFactor*Math.sign(k.speed||1);
+    // grip < 1 (ice) turns wider and lets a drift slide further out.
+    const grip=track.grip;
+    if(k.drift)yawRate=k.driftDir*(K.driftTurn+K.driftExtra*k.steer*k.driftDir)*clamp(k.speed/14,0,1)*grip;
+    else yawRate=k.steer*K.turn*speedFactor*Math.sign(k.speed||1)*grip;
     if(control)k.yaw-=yawRate*dt;
     // Lateral slide: outward during drift, gripped otherwise.
-    const slideTarget=k.drift?-k.driftDir*k.speed*.16:0;
-    k.slide+=(slideTarget-k.slide)*Math.min(1,dt*(k.drift?3:8));
+    const slideTarget=k.drift?-k.driftDir*k.speed*.16/grip:0;
+    k.slide+=(slideTarget-k.slide)*Math.min(1,dt*(k.drift?3:8)*grip);
     const fx=Math.sin(k.yaw),fz=Math.cos(k.yaw),[rx,rz]=T.rightOf(fx,fz);
     k.x+=(fx*k.speed+rx*k.slide)*dt;k.z+=(fz*k.speed+rz*k.slide)*dt;
     const loc=T.locate(track,k.x,k.z,k.idx);
@@ -80,9 +90,10 @@
     if(delta>track.N/2)delta-=track.N;if(delta<-track.N/2)delta+=track.N;
     k.dist+=delta;k.idx=loc.i;k.lat=loc.lat;k.y=loc.y;
     k.off=Math.abs(loc.lat)>track.half?1:0;k.wall=0;
-    if(Math.abs(loc.lat)>track.wall){
+    const fence=T.fence(track,loc.i,loc.lat);
+    if(Math.abs(loc.lat)>fence){
       // Barrier: put the kart back on the fence line and bleed speed.
-      const p=T.at(track,loc.s,Math.sign(loc.lat)*track.wall);k.x=p.x;k.z=p.z;k.lat=Math.sign(loc.lat)*track.wall;
+      const p=T.at(track,loc.s,Math.sign(loc.lat)*fence);k.x=p.x;k.z=p.z;k.lat=Math.sign(loc.lat)*fence;
       // Scrape along the fence: nudge the nose back toward the road direction.
       let diff=p.yaw-k.yaw;diff=Math.atan2(Math.sin(diff),Math.cos(diff));if(Math.abs(diff)<Math.PI/2&&k.speed>0)k.yaw+=diff*Math.min(1,dt*4);k.speed*=Math.pow(.25,dt);k.slide*=.5;k.wall=1;
     }

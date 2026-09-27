@@ -211,7 +211,10 @@ for(const id of T.ids){
   const t=T.build(id);
   for(const [box,attr] of [[$('track-list'),'track'],[$('next-track-list'),'nextTrack']]){
     const b=document.createElement('button');b.type='button';b.className='track-card';b.dataset[attr]=id;
-    const name=document.createElement('strong');name.textContent=t.name;const sub=document.createElement('small');sub.textContent=t.blurb;b.append(name,sub);
+    const name=document.createElement('strong');name.textContent=t.name;
+    const level=document.createElement('span');level.className='track-level';level.dataset.level=t.level;
+    level.textContent='★'.repeat(t.level)+'☆'.repeat(5-t.level)+' '+t.levelLabel+' · '+(t.N/1000).toFixed(1)+' km';
+    const sub=document.createElement('small');sub.textContent=t.blurb;b.append(name,level,sub);
     b.addEventListener('click',()=>{try{transport.setTrack(id);if(transport.role()==='solo'||transport.role()==='host')onView(transport.peek());}catch(e){error(describe(e));}});box.append(b);
   }
 }

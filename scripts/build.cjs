@@ -14,6 +14,6 @@ const esbuild=require(esbuildPath);
   const bytes=Buffer.byteLength(html);if(bytes>10*1024*1024)throw Error('HTML exceeds host 10 MB limit');
   const out=path.join(root,'dist/桌宠赛车.html');fs.mkdirSync(path.dirname(out),{recursive:true});fs.writeFileSync(out,html);
   const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
-  const info={file:path.relative(root,out),bytes,sha256:crypto.createHash('sha256').update(html).digest('hex'),version:pkg.version,protocol:{id:'pet-kart',version:1},esbuild:require(path.join(esbuildPath,'package.json')).version,three:'0.164.1',cannon:'0.20.0'};
+  const info={file:path.relative(root,out),bytes,sha256:crypto.createHash('sha256').update(html).digest('hex'),version:pkg.version,protocol:{id:'pet-kart',version:Number(/version:(\d+)/.exec(/PROTOCOL=\{[^}]*\}/.exec(fs.readFileSync(path.join(root,'game/net.js'),'utf8'))[0])[1])},esbuild:require(path.join(esbuildPath,'package.json')).version,three:'0.164.1',cannon:'0.20.0'};
   fs.writeFileSync(path.join(root,'dist/build.json'),JSON.stringify(info,null,2));console.log(JSON.stringify(info,null,2));
 })().catch(e=>{console.error(e);process.exit(1);});
