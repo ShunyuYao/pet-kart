@@ -61,7 +61,15 @@
       }catch(e){if(!/backpressure/.test(e.message))fail(e);}finally{sending=false;}
     }
     // ---------- host ----------
-    function peer(id){let p=peers.get(id);if(!p){p={id,seat:null,lastHeard:now(),readySeq:0,sent:new Set(),sending:false,online:true};peers.set(id,p);}return p;}
+    function peer(id){let p=peers.get(id);if(!p){p={id,seat:null,lastHeard:now(),readySeq:0,sent:new Set(),sending:false,online:true,signature:null,pending:null};peers.set(id,p);}return p;}
+    // A guest's look is relayed once its hello has declared that signature as its own. It may
+    // arrive before the hello, or from a guest waiting for the next race (its seat still shows
+    // a computer driver): keep it until then (health check 2026-09-29, kart avatar-before-hello
+    // and join-mid-race: those looks never reached the other guests).
+    function acceptPending(p){
+      const v=p.pending;if(!v||p.signature!==v.signature)return;p.pending=null;
+      payloads.set(v.signature,v.data);for(const q of peers.values())if(q!==p)q.sent.delete(v.signature);
+    }
     function freeSeat(){const taken=new Set([...peers.values()].map(p=>p.seat));return GUEST_SEATS.find(n=>!taken.has(n)&&!room.isHuman(n));}
     function drop(id){const p=peers.get(id);if(!p)return;peers.delete(id);if(p.seat!==null)room.depart(p.seat);}
     function hostTick(){
@@ -120,8 +128,8 @@
         if(data.purpose!==PURPOSE||data.contentType!=='application/octet-stream')throw Error('invalid_profile');
         const value=decode(data.dataBase64);if(!value||value.v!==1||typeof value.signature!=='string')throw Error('invalid_profile');
         const p=peer(from);p.lastHeard=now();
-        // Relay only what the guest declared as its own driver.
-        if(p.seat!==null&&room.seat(p.seat)?.signature===value.signature){payloads.set(value.signature,data.dataBase64);for(const q of peers.values())if(q!==p)q.sent.delete(value.signature);}
+        // Relay only what the guest declared as its own driver (its hello may come later).
+        p.pending={signature:value.signature,data:data.dataBase64};acceptPending(p);
         onAsset(p.seat,value.signature,value.asset);return;
       }
       if(e.type!=='message')return;
@@ -129,6 +137,7 @@
       if(type==='kart.hello'){
         let valid;try{valid=R.validateProfile(v?.profile);}catch{return;}
         if(p.seat===null){const n=freeSeat();if(n===undefined)return;p.seat=n;}
+        p.signature=valid.signature;acceptPending(p);
         room.join(p.seat,valid);return;
       }
       if(type==='kart.input'&&v&&typeof v==='object'&&p.seat!==null){
@@ -163,7 +172,7 @@
           const wait=lastPoll+POLL_GAP-now();if(wait>0)await pause(wait);lastPoll=now();
           const b=await sdk.poll({cursor,waitMs:1000});if(disposed||closed)break;
           if(b.transportState==='closed'){for(const e of b.events)if(e.type==='closed'){end(e.reason);break;}end();break;}
-          if(b.epoch!==epoch){epoch=b.epoch;sentSignature='';}
+          if(b.epoch!==epoch)epoch=b.epoch; // a reconnect: the host keeps looks it received, never resend (8 MB per session)
           status(b.transportState);if(b.transportState==='connected'&&b.events.length)lastHeard=now();
           for(const e of b.events){note(e);try{await(host?hostEvent(e):guestEvent(e));}catch(err){fail(err);}}cursor=b.cursor;
         }catch(e){if(/session_closed|caller_disposed|permission_denied|permission_revoked|account_changed/.test(e.message)){end(e.message);break;}status('reconnecting');fail(e);await pause(350);}
