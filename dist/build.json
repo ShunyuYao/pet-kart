@@ -1,8 +1,8 @@
 {
   "file": "dist/桌宠赛车.html",
-  "bytes": 740539,
-  "sha256": "7301072f4f547aae75b730f5c936569fb2af98a8e0102e0f13a6e372a7117317",
-  "version": "0.5.1",
+  "bytes": 741398,
+  "sha256": "a42f61bcba34c129af7b2fc5f565190248d3afd423d0922e411da4ad4e1323db",
+  "version": "0.5.2",
   "protocol": {
     "id": "pet-kart",
     "version": 2

@@ -6,6 +6,7 @@ import T from '../game/track.cjs';
 import S from '../game/sim.cjs';
 import Net from '../game/net.js';
 import Solo from '../game/solo.js';
+import RemoteMotion from '../game/remote-motion.cjs';
 
 const $=id=>document.getElementById(id);
 const world=createWorld($('stage'));
@@ -18,8 +19,8 @@ const SEATS=[0,1,2,3];
 const cpuAsset=p=>CPU_ASSETS[p.signature]||{kind:'toy',species:'mouse',color:p.color};
 
 let driver=null,transport=null,mode='title',view=null,connection='idle',sdk=window.pet||null,petDriver=null;
-let ceremonyFor=-1,lastRaceNo=-1,lastEventSeq=0,pred=null,remoteBuf=[],itemCount=0,errorTimer=null,toastTimer=null,lastFrame=performance.now();
-const peerAssets=new Map(),keys=new Set();
+let ceremonyFor=-1,lastRaceNo=-1,lastEventSeq=0,pred=null,itemCount=0,errorTimer=null,toastTimer=null,lastFrame=performance.now();
+const peerAssets=new Map(),keys=new Set(),remoteMotion=RemoteMotion.create();
 
 // ---------- UI helpers ----------
 function show(panel){for(const id of ['title-panel','lobby-panel','results-panel'])$(id).hidden=id!==panel;$('menu').hidden=!panel;}
@@ -116,8 +117,8 @@ async function followPet(){
 // ---------- transport ----------
 function onView(v){
   view=v;
-  if(v.race&&v.raceNo!==lastRaceNo){lastRaceNo=v.raceNo;lastEventSeq=0;pred=null;remoteBuf=[];}
-  if(transport?.role()==='guest'&&v.race){remoteBuf.push({t:performance.now(),karts:v.race.karts.filter(k=>k.seat!==v.you)});if(remoteBuf.length>12)remoteBuf.shift();reconcile(v.race);}
+  if(v.race&&v.raceNo!==lastRaceNo){lastRaceNo=v.raceNo;lastEventSeq=0;pred=null;remoteMotion.reset();}
+  if(transport?.role()==='guest'){remoteMotion.push(v,performance.now());if(v.race)reconcile(v.race);}
   syncDrivers(v);renderMenus();
 }
 function syncDrivers(v){
@@ -137,7 +138,7 @@ function onAsset(seat,signature,asset){
   if(!C.checkAsset(asset)){error('朋友的形象数据无效，已改用玩具车手显示。');return;}
   peerAssets.set(signature,asset);if(view)syncDrivers(view);
 }
-function onConnection(s){connection=s;renderMenus();if(s==='closed'&&mode!=='title')toast('联机已结束');}
+function onConnection(s){connection=s;if(s==='closed')remoteMotion.reset();renderMenus();if(s==='closed'&&mode!=='title')toast('联机已结束');}
 async function startSolo(){
   if(transport)return;
   transport=Solo.create({onView,onConnection});mode='lobby';
@@ -151,7 +152,7 @@ async function startLan(){
   if(ctx.role==='host')await world.setDriver(0,{profile:driver.profile,asset:driver.asset,fallback:driver.fallback});
 }
 async function leave(){
-  const t=transport;transport=null;view=null;pred=null;mode='title';lastRaceNo=-1;world.stopCeremony();ceremonyFor=-1;
+  const t=transport;transport=null;view=null;pred=null;remoteMotion.reset();mode='title';lastRaceNo=-1;world.stopCeremony();ceremonyFor=-1;
   try{await t?.leave();}catch{}t?.dispose();audio.silence();
   for(const seat of SEATS.slice(1))world.removeDriver(seat);await world.setDriver(0,{profile:driver.profile,asset:driver.asset,fallback:driver.fallback});
   renderMenus();
@@ -263,16 +264,7 @@ function reconcile(race){
   if(server.boost>pred.boost+.25)pred.boost=server.boost;
   for(const f of ['item','rolling','lap','finishedAt','place','itemUsed'])pred[f]=server[f];
 }
-function remoteStates(){
-  // Render other karts ~110 ms in the past, interpolated between snapshots.
-  const t=performance.now()-110;let a=null,b=null;
-  for(let i=remoteBuf.length-1;i>0;i--)if(remoteBuf[i-1].t<=t){a=remoteBuf[i-1];b=remoteBuf[i];break;}
-  if(!a)return remoteBuf.at(-1)?.karts||[];
-  const f=Math.max(0,Math.min(1,(t-a.t)/Math.max(1,b.t-a.t)));
-  return b.karts.map(kb=>{const ka=a.karts.find(k=>k.seat===kb.seat);if(!ka)return kb;const k={...kb};
-    for(const n of ['x','y','z','speed','steer'])k[n]=ka[n]+(kb[n]-ka[n])*f;
-    let dy=kb.yaw-ka.yaw;dy=Math.atan2(Math.sin(dy),Math.cos(dy));k.yaw=ka.yaw+dy*f;return k;});
-}
+function remoteStates(){return remoteMotion.sample(performance.now());}
 
 // ---------- HUD + events ----------
 const nameOf=s=>view.players.find(p=>p.seat===s)?.name||'对手';

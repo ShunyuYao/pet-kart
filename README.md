@@ -35,7 +35,7 @@ A single-file HTML 3D kart racer for the 吐梨邦 desktop pet. Opened inside th
 | 手动导入普通角色包或 PNG / WebP / JPG | 2D 车手 |
 | 内置 | 奶酪鼠 / 橘子猫 / 棉花兔 |
 
-`character.getRealtime` 已登记在 [pet-plugin-types](https://github.com/ShunyuYao/pet-plugin-types)，尚无已发布宿主支持；方法不存在时游戏自动回退 2D。导入的角色只保存在本作品的浏览器存储里，联机时经宿主的会话通道发给对方一次，不上传任何服务器。
+`character.getRealtime` 已登记在 [pet-plugin-types](https://github.com/ShunyuYao/pet-plugin-types)；支持该能力且形象带实时数据的宿主可自动使用 3D，方法不存在时游戏自动回退 2D。导入的角色只保存在本作品的浏览器存储里，联机时经宿主的会话通道发给对方一次，不上传任何服务器。
 
 ## 联机
 
@@ -44,7 +44,7 @@ A single-file HTML 3D kart racer for the 吐梨邦 desktop pet. Opened inside th
 3. 比赛进行中加入的朋友先观战，本局结算后顶替一位电脑车手上场；中途离开的人，座位在结算后还给电脑。
 4. 房主关窗或离开，整局结束。
 
-房主权威：房主运行规则（`game/room.cjs`、`game/sim.cjs`），客人只发操作意图；客人本地预测自己的车并向房主结果收敛，其他车延迟插值显示。星形拓扑：客人之间不直连，房主用 `to` / `from` 区分客人，并把每位车手的形象转发给其他人。使用宿主 `pet.sessions`（HTML 作品专用实验能力，协议 `pet-kart` v2，声明 `players: 4`），每位客人一条会话，分别遵守其限额。
+房主权威：房主运行规则（`game/room.cjs`、`game/sim.cjs`），客人只发操作意图；客人本地预测自己的车并向房主结果收敛，其他车按房主比赛时间延迟 150 ms 插值显示，短暂缺包最多外推 100 ms；退出、换赛道、重开和颁奖会清空旧轨迹。星形拓扑：客人之间不直连，房主用 `to` / `from` 区分客人，并把每位车手的形象转发给其他人。使用宿主 `pet.sessions`（HTML 作品专用实验能力，协议 `pet-kart` v2，声明 `players: 4`），每位客人一条会话，分别遵守其限额。
 
 需要支持多人房间（`players` 3–4）的宿主：吐梨邦测试版 0.26.0-internal.6 起支持，正式版暂不支持。旧宿主只接受 2 人声明，会拒绝整份作品：0.4 在旧宿主上连单人模式也打不开。旧宿主请用 [v0.3.0](https://github.com/ShunyuYao/pet-kart/tree/v0.3.0)（2 人版）。0.3 与 0.4 协议不同，不能混玩。
 
@@ -54,6 +54,9 @@ A single-file HTML 3D kart racer for the 吐梨邦 desktop pet. Opened inside th
 npm run build          # esbuild 打包成单个内联脚本（需要 esbuild，可用 PET_KART_ESBUILD 指定）
 npm run test:rules     # 规则与联机协议（Node）
 npm run test:browser   # 隐藏 Electron 打开最终 HTML，CDP 真实键盘
+npm run test:remote-motion # 两个真实宿主：开车时观察对方车，覆盖正常与成批收包
+npm run test:remote-motion:3d # 同一路径使用 3D 布偶
+npm run test:integration # 联机验收门槛：两种形象的平滑度与三人完整比赛
 npm run test:host      # 三个真实桌宠宿主实例的局域网 E2E：聊天发送 + 控制栏邀请，3 人同局（需要宿主源码与本地角色包）
 npm run test:installed # 已安装宿主 + 当前形象只读副本
 ```
@@ -71,3 +74,5 @@ npm run test:installed # 已安装宿主 + 当前形象只读副本
 ## License
 
 MIT
+
+Remote cars use host simulation timestamps with a 150 ms presentation buffer and at most 100 ms of extrapolation. The real-host integration gate checks movement while both players drive, including batched SDK delivery; race changes and disconnects clear stale motion. This changes presentation only; the host still decides collisions and results.

@@ -22,14 +22,15 @@ const electron = require(path.join(HOST, 'demo/node_modules/electron'));
 const charIds = ['rat-doll-female', 'rat-doll-male'];
 const F = require(path.join(HOST, 'tests/helpers/lan-appearance-fixture'));
 const { activateButton, activateClosingButton } = require(path.join(HOST, 'tests/e2e/html-card-input'));
-const source = path.join(GAME, 'dist/桌宠赛车.html');
+const source = process.env.KART_HTML || path.join(GAME, 'dist/桌宠赛车.html');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pet-plugin-appearance-peer-delivery-'));
 const runId = new Date().toISOString().replace(/[:.]/g, '-');
 const evidence = path.join(GAME, 'artifacts/host-e2e', runId);
 const bootstrap = path.join(H.REPO, 'tests/helpers/peer-session-delivery-bootstrap.js');
 const report = { runId, root, scope: 'Actual three hidden production hosts (room of host + 2 guests) over loopback UDP/TCP/TLS. OS keystore is test AES-GCM only; native Keychain and two physical machines are not covered.', checks: [], failures: [], screenshots: [], dialogs: [], sdkGrants: [], exceptions: [] };
 const apps = [], sockets = [];
-let runtime;
+report.testHashes=Object.fromEntries(['host-e2e.cjs','remote-smoothness-host.cjs','motion-artifact.cjs'].map(f=>[f,crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname,f))).digest('hex')]));
+let runtime,mandatory;
 const json = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null, 2));
 const hash = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 function check(label, detail) { report.checks.push({ label, pass: true, ...(detail === undefined ? {} : { detail }) }); console.log('PASS', label); }
@@ -55,7 +56,7 @@ async function boot(label, discovery, peerDiscoveries) {
     crossScreen: { allowDirectVisits: true, requireVisitConfirmation: false },
     relay: { url: 'ws://127.0.0.1:1', paired: {} }, general: { autoCheckUpdates: false }, tts: { enabled: false },
     plugins: { developerMode: false, registrySources: ['http://127.0.0.1:1/registry.json'] } });
-  app.env = { ...process.env, ELECTRON_RUN_AS_NODE: undefined, PET_USERDATA_DIR: app.profile,
+  app.env = { ...process.env,...(mandatory?.env||{}), ELECTRON_RUN_AS_NODE: undefined, PET_USERDATA_DIR: app.profile,
     PET_E2E_TEST: '1', PET_E2E_HIDDEN: '1', PET_E2E_BACKGROUND: '1', PET_DND_TRIGGER_COUNT: '999',
     PET_ACCOUNT_API_BASE: 'http://127.0.0.1:1', PET_ACTIVITY_BRIDGE_PORT: '0',
     PET_LAN_DISCOVERY_PORT: String(discovery), PET_LAN_DISCOVERY_TARGETS: [].concat(peerDiscoveries).map(p => '127.0.0.1:' + p).join(','),
@@ -67,6 +68,7 @@ async function launch(app) {
   app.run.native = path.join(evidence, app.run.label + '-native.jsonl'); fs.writeFileSync(app.run.native, '');
   app.child = spawn(electron, ['--require', bootstrap, runtime.demo, `--remote-debugging-port=${app.cdp}`, '--use-mock-keychain', '--mute-audio'], { cwd: runtime.demo, env: { ...app.env, PET_PUBLIC_NATIVE_LOG: app.run.native }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
   app.run.pid = app.child.pid; app.child.log = ''; app.child.stdout.on('data', x => { app.child.log += x; }); app.child.stderr.on('data', x => { app.child.log += x; });
+  if(mandatory)await mandatory.login(app.cdp,'1997777666'+(app.label.charCodeAt(0)-96));
   app.pet = await H.findTarget(app.cdp, '/index.html');
   await wait(() => H.evalIn(app.pet, 'typeof currentCharKey==="string" && !!frames.idle?.[0]?.[0]?.naturalWidth'), 'real pet decoded ' + app.label);
   await wait(async () => (await H.evalIn(app.pet, H.CANVAS_PIXELS)) > 100, 'real pet painted ' + app.label);
@@ -145,7 +147,7 @@ async function approvals(a, b, expectPair = true) {
     const pages = await Promise.all([a, b].map(async app => { const page = (await targets(app)).find(t => t.url.startsWith('pet-work:') && !t.url.includes('thumbnail=1')); if (!page) return null; if(app.game?.id!==page.id){app.game=page;await H.cdp(page,'Emulation.setFocusEmulationEnabled',{enabled:true});await H.cdp(page,'Page.captureScreenshot',{format:'png'});await recordErrors(page);} const ready = await H.evalIn(page, 'window.__kart?.state.view?.players?.length === 4 && window.__kart.state.view.players.some(p=>p.seat===window.__kart.state.view.you) && !document.querySelector("#ready").disabled', 3000).catch(() => false); if (ready) { app.game = page; return page; } return null; }));
     return pages.every(Boolean);
   }, 'invitation, first pairing, SDK permission and current pets', 65000);
-  assert(accepted >= 1, 'recipient must accept each game invitation'); assert(!expectPair || paired); if(expectPair)assert([a.label,b.label].every(label=>report.sdkGrants.includes(label)), 'both fresh hosts require explicit SDK consent, including initial share-only approval');
+  assert(accepted >= 1, 'recipient must accept each game invitation'); assert(!expectPair || paired); assert([a.label,b.label].every(label=>report.sdkGrants.includes(label)), 'both fresh hosts require explicit SDK consent, including initial share-only approval');
   for (const app of [a, b]) { await watch(app.game, app.label + '-game'); assert.equal(await H.evalIn(app.game, '!document.querySelector("#server-address,#room-code") && document.querySelector("#title-panel").hidden'), true); const context = await H.evalIn(app.game, 'pet.sessions.getContext()'); assert.equal(context.role, app === a ? 'host' : 'guest'); assert.equal(context.artifactHash, hash(source)); app.context = context; }
   // The host context keeps the first invitation; each later guest has its own, listed in the host's peers.
   if (a.context.peers.length === 1) assert.equal(a.context.invitationId, b.context.invitationId);
@@ -226,7 +228,7 @@ async function inviteFromControls(a,c){
   assert.equal(hash(incoming.file.savedPath),hash(source));
   const receipt=await wait(async()=>{for(const page of (await targets(c)).filter(t=>t.url.includes('/dialog.html')))if(await H.evalIn(page,'!!document.querySelector("[data-work-open]")').catch(()=>false))return page;return null;},'work receipt on c');
   await activateClosingButton(c.cdp,receipt,'[data-work-open]');
-  await approvals(a,c);
+  await approvals(a,c,process.env.KART_AUTO_PAIRING!=='1');
   assert.equal(a.game.id,gameId);assert.equal(await H.evalIn(a.game,'performance.timeOrigin'),origin,'host game never reloaded');
   check('control-bar invite brings a third host into the open room without reloading the host game');
 }
@@ -303,12 +305,20 @@ async function kartPlay(a,b,c){
   fs.mkdirSync(evidence,{recursive:true});
   try{
     H.requireNode22();assert(fs.existsSync(source),'build first');report.gameSha256=hash(source);
+    if(fs.existsSync(path.join(HOST,'demo/core/trial-access/index.js'))){mandatory=await require(path.join(HOST,'tests/helpers/mandatory-login-fixture')).createMandatoryLoginFixture();report.admission='isolated production account service and real UI login';}
     runtime=F.freeze(H.REPO,root,false);report.source=runtime.source;
     const ap=await F.freePort(),bp=await F.freePort(),cp=await F.freePort();
-    const a=await boot('a',ap,[bp,cp]),b=await boot('b',bp,[ap,cp]),c=await boot('c',cp,[ap,bp]);
-    for(const app of [a,b])await installAppearances(app);
-    await applyMain(a,'rat-doll-male');await applyMain(b,'rat-doll-female');
-    await nearby(a,c);await sendGame(a,b);await approvals(a,b);await inviteFromControls(a,c);await kartPlay(a,b,c);
+    const a=await boot('a',ap,[bp,cp]),b=await boot('b',bp,[ap,cp]);
+    if(process.env.KART_REMOTE_SMOOTHNESS==='1'){
+      if(process.env.KART_EXPECT_3D==='1'){for(const app of [a,b])await installAppearances(app);await applyMain(a,'rat-doll-male');await applyMain(b,'rat-doll-female');}
+      await sendGame(a,b);await approvals(a,b,process.env.KART_AUTO_PAIRING!=='1');
+      await require('./remote-smoothness-host.cjs').run({a,b,H,wait,state,activateButton,check,screenshot,json,evidence,report,autopilot,closeWork});
+    }else{
+      const c=await boot('c',cp,[ap,bp]);
+      for(const app of [a,b])await installAppearances(app);
+      await applyMain(a,'rat-doll-male');await applyMain(b,'rat-doll-female');
+      await nearby(a,c);await sendGame(a,b);await approvals(a,b,process.env.KART_AUTO_PAIRING!=='1');await inviteFromControls(a,c);await kartPlay(a,b,c);
+    }
   }catch(error){
     report.failures.push(error.message);report.error=error.stack;console.error(error);
     for(const app of apps){const list=await targets(app).catch(()=>[]);json(path.join(evidence,app.label+'-targets.json'),list.map(t=>({type:t.type,url:t.url,title:t.title})));
@@ -321,6 +331,10 @@ async function kartPlay(a,b,c){
   }finally{
     for(const ws of sockets)ws.close();
     for(const app of apps)await stop(app).catch(e=>report.failures.push('cleanup: '+e.message));
+    if(mandatory)await mandatory.close().catch(e=>report.failures.push('account fixture cleanup: '+e.message));
+    for(const app of apps)for(const run of app.runs||[]){const rows=fs.readFileSync(run.native,'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);if(!rows.length||!rows.every(r=>!r.isVisible&&!r.isFocused&&r.backgroundThrottling===false))report.failures.push('window isolation failed '+run.label);if(!run.exited)report.failures.push('owned process not stopped '+run.label);}
+    for(const [f,h] of Object.entries(report.testHashes))if(hash(path.join(__dirname,f))!==h)report.failures.push('test changed during run '+f);
+    report.baselineSha256=process.env.KART_BASELINE_SHA||null;
     if(report.exceptions.length)report.failures.push('uncaught renderer exceptions');
     report.ok=!report.failures.length;json(path.join(evidence,'report.json'),report);
     console.log('REPORT',path.join(evidence,'report.json'),report.ok?'OK':'FAIL');process.exitCode=report.ok?0:1;

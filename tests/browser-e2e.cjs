@@ -3,7 +3,7 @@
 // Character packs with realtime rag-doll data are local fixtures (not in this repo); set
 // KART_DOLL_ZIP to override). Nothing is simulated through internal flags.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os'),{spawn}=require('node:child_process');
-const ROOT=path.resolve(__dirname,'..'),REPO=path.resolve(ROOT,'../..');
+const ROOT=path.resolve(__dirname,'..'),REPO=process.env.KART_HOST_ROOT||path.resolve(ROOT,'../..');
 const {connect}=require('./cdp.cjs');
 const DOLL=process.env.KART_DOLL_ZIP||path.resolve(ROOT,'../rat-doll-lab/dist/rat-doll-female.zip');
 const IMAGE=process.env.KART_IMAGE||path.resolve(ROOT,'../rat-doll-lab/dist/rat-doll-male/frames/idle/frame_00.png');
