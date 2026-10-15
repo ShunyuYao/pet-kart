@@ -1,8 +1,8 @@
 {
   "file": "dist/桌宠赛车.html",
-  "bytes": 760894,
-  "sha256": "3faecdb37d78736597bc169e6b878b04563b2255e7e92f1bcc0ad259a9ff8070",
-  "version": "0.7.0",
+  "bytes": 768723,
+  "sha256": "2192eeb516214836cd17f712d8df48eb49d48e6f4bfc5ba6f5827c89097e9bcd",
+  "version": "0.7.1",
   "kitVersion": "0.3.0",
   "kitManifestSha256": "46c8f77269dfaee956f8c2a8b7a1f6dd53f756aad7f3a14aabb9b417e939b4eb",
   "protocol": {

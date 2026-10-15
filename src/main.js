@@ -300,7 +300,9 @@ function hud(race,me){
   $('place').textContent=['1st','2nd','3rd'][me.place-1]||me.place+'th';$('place').dataset.place=me.place;
   $('lap').textContent='圈 '+Math.max(1,Math.min(race.laps,me.lap||1))+' / '+race.laps;
   $('time').textContent=fmt(me.finishedAt||race.t);
-  $('speed').textContent=String(Math.round(Math.abs(me.speed)*3.6));
+  const kmh=Math.abs(me.speed)*3.6;
+  $('speed').textContent=String(Math.round(kmh));
+  $('speed-needle').setAttribute('transform','rotate('+(-135+Math.min(180,kmh)/180*270).toFixed(2)+' 92 92)');
   const rolling=me.item&&me.rolling;$('item-slot').dataset.state=rolling?'rolling':me.item?'ready':'empty';
   $('item-icon').textContent=rolling?['🍄','🍌','🧶'][Math.floor(performance.now()/90)%3]:ITEM_ICON[me.item]||'';
   $('item-name').textContent=rolling?'抽取中…':me.item?ITEM_NAME[me.item]+' · E 使用':'道具箱';
@@ -308,8 +310,10 @@ function hud(race,me){
   const active=me.nitroTime>0,ready=me.nitro>=100,level=active?me.nitroTime/3*100:me.nitro||0;
   $('nitro-button').dataset.state=active?'active':ready?'ready':'charging';
   $('nitro-button').disabled=!ready||active||race.phase!=='racing'||!!me.finishedAt||me.spin>0;
-  $('nitro-state').textContent=active?'加速中 · '+me.nitroTime.toFixed(1)+'s':ready?'已就绪 · 按 N 释放':'漂移积能 · '+Math.floor(me.nitro||0)+'%';
-  $('nitro-fill').style.width=level+'%';$('nitro-meter').setAttribute('aria-valuenow',String(Math.round(level)));
+  $('nitro-state').textContent=active?'加速中':ready?'已就绪':'漂移积能';
+  $('nitro-value').textContent=active?me.nitroTime.toFixed(1):String(Math.floor(me.nitro||0));
+  $('nitro-unit').textContent=active?'s':'%';
+  $('nitro-fill').setAttribute('stroke-dashoffset',String(100-level));$('nitro-meter').setAttribute('aria-valuenow',String(Math.round(level)));
   $('nitro-meter').setAttribute('aria-label',active?'氮气剩余时间':'氮气能量');
   $('wrong-way').hidden=true;
   const lost=view.players.find(p=>!p.ai&&p.seat!==view.you&&!p.connected);
