@@ -98,6 +98,22 @@ test('message resyncs never re-send avatars (transfer budget is 60/min per work)
   assert.deepEqual(x.errors,[]);x.dispose();
 });
 
+// A relay can refuse a send before poll reports the socket outage. Latest inputs and
+// ready state are retried by the next tick; a transient refusal must not become an error bar.
+test('guest retries transient send refusals and still reports permanent failures',async()=>{
+  const x=await lanRoom(['b']);await wait(()=>x.views.b?.players.length===4,'joined');
+  const send=x.sdks.b.send;
+  for(const reason of ['peer_offline','not_connected','quota_exceeded','backpressure','invalid_request']){
+    let rejected=false,resumed=false;
+    x.sdks.b.send=async message=>{if(!rejected){rejected=true;throw Error(reason);}resumed=true;return send(message);};
+    await wait(()=>rejected&&resumed,'send resumes after '+reason);
+    assert.deepEqual(x.errors,[],reason+' is retried without a stale error bar');
+  }
+  let rejected=false;
+  x.sdks.b.send=async message=>{if(!rejected){rejected=true;throw Error('permission_revoked');}return send(message);};
+  await wait(()=>x.errors.includes('b:permission_revoked'),'permanent refusal remains visible');
+});
+
 test('2 humans: two computer drivers fill the grid to 4 karts in two rows',async()=>{
   const x=await lanRoom(['b']);
   await wait(()=>x.views.b?.players.length===4,'guest sees 2 humans + 2 computers');

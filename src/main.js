@@ -181,9 +181,9 @@ function renderMenus(){
     const people=view.players.filter(p=>!p.ai).length;
     $('ready').disabled=ended||!me||view.waiting;$('ready').textContent=solo?'开始比赛':view.waiting?'本局结束后上场':me?.ready?'已准备 · 点此取消':'我准备好了';
     $('lobby-note').textContent=ended?(host?'房间已关闭。':'房主已离开。')+'通过桌宠重新发送这份 HTML，就能再比一场。':solo?'电脑对手已就位。':view.waiting?'比赛正在进行，本局结束后你会顶替一位电脑车手上场。':
-      people<2?(host?'点游戏窗口顶部的「＋ 邀请」，把同一局域网的朋友拉进来（最多 4 人）。':'等房主开局。'):
+      people<2?(host?'点游戏窗口顶部的「＋ 邀请」，把在线朋友拉进来（最多 4 人）。':'等房主开局。'):
       '所有人都准备好就发车，空位由电脑车手补上。'+(host&&people<4?'还可以点顶部「＋ 邀请」再拉一位朋友。':'');
-    $('lobby-title').textContent=solo?'单人赛 · 对战电脑':'多人赛 · 局域网 '+people+'/4';
+    $('lobby-title').textContent=solo?'单人赛 · 对战电脑':'多人赛 · 联机 '+people+'/4';
   }
   if(mode==='results'){
     const order=[...race.karts].sort((a,b)=>a.place-b.place);

@@ -3,7 +3,7 @@
   "version": "0.7.1",
   "private": true,
   "license": "MIT",
-  "description": "桌宠赛车：可导入桌宠 2D/3D 形象的 3D 卡丁车单文件 HTML 游戏，支持局域网最多 4 人",
+  "description": "桌宠赛车：可导入桌宠 2D/3D 形象的 3D 卡丁车单文件 HTML 游戏，支持局域网和互联网中转最多 4 人",
   "scripts": {
     "build": "node scripts/build.cjs",
     "test:rules": "node --test tests/sim.test.cjs tests/net.test.cjs tests/tracks.test.cjs tests/remote-motion.test.cjs",
@@ -16,6 +16,13 @@
     "test:remote-motion:3d": "node tests/remote-smoothness-e2e.cjs --doll3d",
     "test:catalog": "node tests/catalog-entry-e2e.cjs",
     "test:artifact": "node --test tests/artifact.test.cjs",
+    "test:relay": "node tests/host-e2e.cjs --relay --four",
+    "test:mixed": "node tests/host-e2e.cjs --mixed --four",
+    "test:internet": "npm run test:artifact && npm run test:relay && npm run test:mixed && npm run test:remote-motion:relay",
+    "test:delivery": "npm test && npm run test:integration && npm run test:internet",
+    "test:remote-motion:relay": "node tests/remote-smoothness-e2e.cjs --relay",
+    "test:physical": "node tests/public-relay.cjs",
+    "test:internet:full": "npm run test:internet && npm run test:physical",
     "test:terrain:e2e": "node tests/terrain-e2e.cjs",
     "test:nitro": "node --test --test-name-pattern=nitro tests/sim.test.cjs",
     "test:nitro:e2e": "node tests/terrain-e2e.cjs --nitro"
