@@ -41,33 +41,33 @@
   const LEVELS=['','入门','简单','进阶','困难','极难'];
   const DEFS={
     cheese:{
-      id:'cheese',name:'奶酪环岛',blurb:'长直道 + 连续 S 弯，适合练漂移',width:18,level:1,
+      id:'cheese',name:'奶酪环岛',blurb:'跳台飞跃、滚动奶酪，长直道练习落地加速',width:18,level:1,
       theme:{style:'cheese',sky:['#7cc8ff','#dff3ff'],grass:'#7fcf6a',grass2:'#6bbd58',road:'#5c5f6b',curbA:'#ff5a5f',curbB:'#ffffff',accent:'#ffc93c'},
       points:[[0,0,-30],[0,0,40],[6,0,92],[40,0,124],[88,0,120],[112,0,86],[100,0,50],[72,0,34],[70,0,4],[98,0,-18],[124,0,-52],[118,0,-100],[80,0,-128],[30,0,-120],[4,0,-84]],
       boxes:[0.19,0.52,0.8],pads:[{s:0.36,lat:0,w:7},{s:0.66,lat:-3.5,w:6},{s:0.93,lat:3,w:6}],
     },
     yarn:{
-      id:'yarn',name:'毛线八字桥',blurb:'8 字形立交，桥上桥下各一次交汇',width:16,level:2,
+      id:'yarn',name:'毛线八字桥',blurb:'8 字立交滑翔，上升风道与横穿的毛线球',width:16,level:2,
       theme:{style:'yarn',sky:['#ffb3c7','#fff1dc'],grass:'#b7e07a',grass2:'#a2d162',road:'#6a5d78',curbA:'#8f6bff',curbB:'#fff6fb',accent:'#ff7fb0'},
       points:figureEight(),
       boxes:[0.14,0.43,0.66,0.9],pads:[{s:0.27,lat:0,w:7},{s:0.77,lat:0,w:7}],
     },
     city:{
-      id:'city',name:'霓虹夜城',blurb:'夜里的街区，直角弯接连不断，还有一段高架从起跑线头顶飞过',width:14,level:3,offMax:13,verge:3,
+      id:'city',name:'霓虹夜城',blurb:'霓虹高架飞跃，移动路障与街口侧风',width:14,level:3,offMax:13,verge:3,
       theme:{style:'city',night:true,sky:['#0c0b2a','#3a1f6b','#7a3a8a'],fog:'#1d1540',grass:'#24233a',grass2:'#2b2a44',road:'#34343f',curbA:'#ff3ea5',curbB:'#2de2ff',accent:'#ff3ea5',
         midLine:'rgba(255,214,90,.9)',verge:'#4a4860',wallBase:'#1b1930',pillar:'#5a5678',light:{hemi:.7,sky:'#8a7dff',ground:'#1a1530',sun:.7,sunColor:'#aab8ff',exposure:1.15,fog:[90,480]}},
       points:rounded([[0,0,-60],[0,0,100,12],[70,0,100,9],[118,0,20,8],[160,0,140,10],[196,0,140,8],[210,0,116,8],[250,0,116,8],[264,0,140,8],[300,0,140,12],[300,0,-20,10],[130,5,-20],[0,7,-20],[-80,3,-20,10],[-80,0,-140,10],[20,0,-140,10],[20,0,-205,10],[200,0,-160,8],[0,0,-100,12]]),
       boxes:[.08,.36,.6,.82],pads:[{s:.24,lat:0,w:6},{s:.55,lat:-3,w:5},{s:.9,lat:3,w:5}],
     },
     snow:{
-      id:'snow',name:'雪糕山道',blurb:'之字形爬坡上山顶，再一路长下坡冲回谷底',width:13,level:4,offMax:11,verge:2.5,grip:.8,
+      id:'snow',name:'雪糕山道',blurb:'雪坡滑翔、打滑冰面、冰块与滚雪球',width:13,level:4,offMax:11,verge:2.5,grip:.8,
       theme:{style:'snow',bank:'#eef4fb',sky:['#9fd4ff','#f2fbff'],fog:'#eef6ff',grass:'#f4f8ff',grass2:'#e6eefb',road:'#5d6878',curbA:'#3aa0ff',curbB:'#ffffff',accent:'#7ad3ff',
         verge:'#dfe9f7',pillar:'#c9d6e8',light:{hemi:1.35,sun:2.2,sunColor:'#ffffff',exposure:1,fog:[140,600]}},
       points:rounded([[0,0,-130],[0,0,60,18],[-30,0,110,12],[20,1,160,12],[80,1,215,12],[140,1,175,12],[200,2,220,14],[260,3,190,14],[364,5,156,12],[208,16,91,8.5],[390,34,26,8.5],[208,48,-39,8.5],[377,52,-104,22],[312,52,-221,26],[130,32,-280,30],[-91,10,-299,12],[0,4,-221,18]]),
       boxes:[.1,.4,.62,.85],pads:[{s:.3,lat:0,w:6},{s:.7,lat:2,w:6}],
     },
     volcano:{
-      id:'volcano',name:'熔岩火山',blurb:'路最窄：发卡弯爬上火山口，沿熔岩边缘绕行，再俯冲飞越起跑线',width:12,level:5,offMax:9.5,verge:2,grip:.9,
+      id:'volcano',name:'熔岩火山',blurb:'火山口热气流滑翔，预警后喷发的熔岩柱',width:12,level:5,offMax:9.5,verge:2,grip:.9,
       theme:{style:'volcano',bank:'#3b3238',sky:['#3b1020','#ff8a4c','#ffd29a'],fog:'#7a3a30',grass:'#2e272c',grass2:'#28222a',cracks:'rgba(255,110,40,.85)',road:'#2a2a30',curbA:'#ff5a1f',curbB:'#ffd166',accent:'#ff5a1f',
         midLine:'rgba(255,140,60,.8)',verge:'#4a3b3a',wallBase:'#2a2226',pillar:'#4a3f44',landmark:{x:20,z:35,r:78,top:18,h:70},
         light:{hemi:.9,sky:'#ffb08a',ground:'#3a1f24',sun:1.7,sunColor:'#ffbe8a',exposure:1.05,fog:[120,560]}},

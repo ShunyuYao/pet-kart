@@ -1,7 +1,7 @@
 // Authoritative race simulation. Pure data in, pure data out: no DOM, no Three.js.
 // The host (or the solo driver) owns one race; guests only send intents and
 // predict their own kart with `stepKart`, then converge to host snapshots.
-(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory(require('./track.cjs'));else root.KartSim=factory(root.KartTrack);})(globalThis,function(T){
+(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory(require('./track.cjs'),require('./terrain.cjs'));else root.KartSim=factory(root.KartTrack,root.KartTerrain);})(globalThis,function(T,E){
   'use strict';
   const K={max:30,accel:22,brake:40,reverse:9,coast:5,offMax:15,turn:2.05,driftTurn:1.25,driftExtra:.85,
     boostMax:40,boostAccel:48,spin:1.15,radius:1.25,itemRadius:2.3,hazardRadius:1.6,yarnSpeed:46,yarnLife:4.5,
@@ -30,7 +30,7 @@
     const four=count>3,fit=Math.min(1,(track.half-1.2)/6),lane=(four?[-6,2,-2,6][slot]:[-5,5,0][slot])*fit,back=8+(four?(slot>1?9:0):(slot===2?1.5:0));
     const p=T.at(track,track.N-back,lane);
     return {seat,x:p.x,y:p.y,z:p.z,yaw:p.yaw,speed:0,slide:0,steer:0,idx:T.wrap(Math.round(track.N-back),track.N),lat:lane,
-      dist:-back,lap:0,item:null,rollUntil:0,itemUsed:0,boost:0,boostKind:'',spin:0,drift:0,driftDir:0,charge:0,
+      air:0,glide:0,vy:0,airTime:0,launchDist:-1e6,envTime:0,terrainCooldown:0,takeoffs:0,landings:0,landingBoosts:0,terrainHits:0,dist:-back,lap:0,item:null,rollUntil:0,itemUsed:0,boost:0,boostKind:'',spin:0,drift:0,driftDir:0,charge:0,
       wall:0,off:0,finishedAt:0,place:0,rocket:0,throttleAt:-1};
   }
   function create({trackId='cheese',laps=LAPS,seed=1,seats=[0,1]}={}){
@@ -45,13 +45,15 @@
   function start(state){if(state.phase==='grid'){state.phase='countdown';state.countdown=COUNTDOWN;event(state,'countdown',-1);}}
   function setInput(state,seat,input){if(state.inputs[seat])state.inputs[seat]=normalizeInput(input,state.inputs[seat]);}
   // Single-kart physics used identically by host and guest prediction.
-  function stepKart(k,input,dt,track,racing=true){
+  function stepKart(k,input,dt,track,racing=true,time){
+    const previousDist=k.dist; k.envTime=time??((k.envTime||0)+dt*1000);
+    const terrain=E.surface(track,k.dist,k.lat,!!k.air);k.surface=terrain.kind;
     const inp=racing&&!k.finishedAt?input:NEUTRAL;
     if(k.spin>0){k.spin=Math.max(0,k.spin-dt);k.speed*=Math.pow(.2,dt);k.drift=0;k.charge=0;}
     const control=k.spin<=0;
     k.boost=Math.max(0,k.boost-dt);
     // Grade under the kart, positive when the nose points uphill.
-    const fwd=Math.sign(Math.cos(k.yaw-Math.atan2(track.tx[k.idx|0]||0,track.tz[k.idx|0]||1))||1),grade=fwd*(T.sampleY(track,k.dist+2)-T.sampleY(track,k.dist-2))/4;
+    const fwd=Math.sign(Math.cos(k.yaw-Math.atan2(track.tx[k.idx|0]||0,track.tz[k.idx|0]||1))||1),grade=(k.air?0:1)*fwd*(T.sampleY(track,k.dist+2)-T.sampleY(track,k.dist-2))/4;
     let max=k.boost>0?K.boostMax:K.max;if(k.off&&!k.boost)max=track.offMax;
     max+=clamp(-grade*K.slopeMax,K.slopeCap[0],K.slopeCap[1]);
     // Steering responds quickly but not instantly, which also smooths network input.
@@ -65,7 +67,7 @@
     if(k.spin<=0&&k.speed>0)k.speed-=grade*K.slope*dt;
     if(k.speed>max)k.speed=Math.max(max,k.speed-(k.off?40:18)*dt);
     // Drift: hold drift while steering at speed. Charge grows; release fires a mini-turbo.
-    if(control&&inp.drift&&k.speed>11&&(k.drift||Math.abs(inp.steer)>.3)){
+    if(!k.air&&control&&inp.drift&&k.speed>11&&(k.drift||Math.abs(inp.steer)>.3)){
       if(!k.drift){k.drift=1;k.driftDir=Math.sign(inp.steer);k.charge=0;}
       k.charge+=dt*(1+.6*Math.max(0,inp.steer*k.driftDir));
     }else if(k.drift){
@@ -76,7 +78,7 @@
     const speedFactor=clamp(Math.abs(k.speed)/9,0,1)*(1-.3*clamp(Math.abs(k.speed)/K.boostMax,0,1));
     let yawRate;
     // grip < 1 (ice) turns wider and lets a drift slide further out.
-    const grip=track.grip;
+    const grip=k.air?1:terrain.grip;
     if(k.drift)yawRate=k.driftDir*(K.driftTurn+K.driftExtra*k.steer*k.driftDir)*clamp(k.speed/14,0,1)*grip;
     else yawRate=k.steer*K.turn*speedFactor*Math.sign(k.speed||1)*grip;
     if(control)k.yaw-=yawRate*dt;
@@ -85,10 +87,12 @@
     k.slide+=(slideTarget-k.slide)*Math.min(1,dt*(k.drift?3:8)*grip);
     const fx=Math.sin(k.yaw),fz=Math.cos(k.yaw),[rx,rz]=T.rightOf(fx,fz);
     k.x+=(fx*k.speed+rx*k.slide)*dt;k.z+=(fz*k.speed+rz*k.slide)*dt;
+    E.flow(k,dt,track,k.envTime);
     const loc=T.locate(track,k.x,k.z,k.idx);
     let delta=loc.s-(T.wrap(k.dist,track.N));
     if(delta>track.N/2)delta-=track.N;if(delta<-track.N/2)delta+=track.N;
-    k.dist+=delta;k.idx=loc.i;k.lat=loc.lat;k.y=loc.y;
+    k.dist+=delta;k.idx=loc.i;k.lat=loc.lat;
+    E.fly(k,inp,dt,track,previousDist,loc.y+E.surface(track,k.dist,k.lat,!!k.air).height,racing);
     k.off=Math.abs(loc.lat)>track.half?1:0;k.wall=0;
     const fence=T.fence(track,loc.i,loc.lat);
     if(Math.abs(loc.lat)>fence){
@@ -133,7 +137,11 @@
     state.t+=dtMs;
     for(const k of state.karts){
       const inp=state.inputs[k.seat],mini=k.miniFired||0;
-      stepKart(k,inp,dt,track,state.phase==='racing');
+      const takeoffs=k.takeoffs,landings=k.landings;
+      stepKart(k,inp,dt,track,state.phase==='racing',state.t);
+      if(k.takeoffs!==takeoffs)event(state,'launch',k.seat,{glide:k.glide});
+      if(k.landings!==landings)event(state,'land',k.seat,{boost:k.boostKind==='landing'&&k.boost>0});
+      E.affect(state,k,dt,hit);
       if((k.miniFired||0)!==mini)event(state,'boost',k.seat,{kind:k.boostKind});
       if(!k.finishedAt){
         const lap=Math.max(0,Math.floor(k.dist/track.N)+1);
@@ -144,7 +152,7 @@
       // Items: an intent counter increment spends the held item once.
       if(inp.item>k.itemUsed){k.itemUsed=inp.item;if(k.item&&state.t>=k.rollUntil&&k.spin<=0)useItem(state,k);}
       // Boost pads.
-      for(const p of track.pads){let d=T.wrap(k.dist,track.N)-p.s;if(d<0)d+=track.N;if(d<p.len&&Math.abs(k.lat-p.lat)<p.w/2&&k.boost<.3){k.boost=K.pad;k.boostKind='pad';event(state,'boost',k.seat,{kind:'pad'});}}
+      for(const p of track.pads){let d=T.wrap(k.dist,track.N)-p.s;if(d<0)d+=track.N;if(!k.air&&d<p.len&&Math.abs(k.lat-p.lat)<p.w/2&&k.boost<.3){k.boost=K.pad;k.boostKind='pad';event(state,'boost',k.seat,{kind:'pad'});}}
     }
     // Item boxes.
     for(const b of state.boxes){
@@ -182,7 +190,7 @@
   function snapshot(state){
     return {v:1,trackId:state.trackId,laps:state.laps,phase:state.phase,t:Math.round(state.t),countdown:Math.round(state.countdown),finishAt:state.finishAt,
       karts:state.karts.map(k=>({seat:k.seat,x:r2(k.x),y:r2(k.y),z:r2(k.z),yaw:r3(k.yaw),speed:r2(k.speed),slide:r2(k.slide),steer:r2(k.steer),idx:k.idx,lat:r2(k.lat),dist:r2(k.dist),lap:k.lap,
-        item:k.item,rolling:k.item&&state.t<k.rollUntil?1:0,boost:r2(k.boost),boostKind:k.boostKind,spin:r2(k.spin),drift:k.drift,driftDir:k.driftDir,charge:r2(k.charge),off:k.off,finishedAt:k.finishedAt,place:k.place,itemUsed:k.itemUsed})),
+        air:k.air||0,glide:k.glide||0,vy:r2(k.vy||0),airTime:r3(k.airTime||0),launchDist:r2(k.launchDist??-1e6),envTime:Math.round(k.envTime||0),terrainCooldown:r2(k.terrainCooldown||0),surface:k.surface||'road',takeoffs:k.takeoffs||0,landings:k.landings||0,landingBoosts:k.landingBoosts||0,terrainHits:k.terrainHits||0,item:k.item,rolling:k.item&&state.t<k.rollUntil?1:0,boost:r2(k.boost),boostKind:k.boostKind,spin:r2(k.spin),drift:k.drift,driftDir:k.driftDir,charge:r2(k.charge),off:k.off,finishedAt:k.finishedAt,place:k.place,itemUsed:k.itemUsed})),
       boxes:state.boxes.map(b=>b.until>state.t?0:1),hazards:state.hazards.map(h=>({id:h.id,kind:h.kind,x:r2(h.x),y:r2(h.y),z:r2(h.z)})),
       projectiles:state.projectiles.map(p=>({id:p.id,kind:p.kind,x:r2(p.x),y:r2(p.y),z:r2(p.z)})),events:state.events.slice(-12)};
   }
@@ -191,7 +199,7 @@
   function validSnapshot(s){
     const num=Number.isFinite;
     return !!s&&s.v===1&&T.ids.includes(s.trackId)&&PHASES.includes(s.phase)&&num(s.t)&&num(s.countdown)&&Array.isArray(s.karts)&&s.karts.length<=4&&
-      s.karts.every(k=>[0,1,2,3].includes(k.seat)&&['x','y','z','yaw','speed','dist'].every(f=>num(k[f]))&&(k.item===null||ITEMS.includes(k.item)))&&
+      s.karts.every(k=>[0,1,2,3].includes(k.seat)&&['x','y','z','yaw','speed','dist'].every(f=>num(k[f]))&&['air','glide','vy','airTime','launchDist','envTime'].every(f=>k[f]===undefined||num(k[f]))&&(k.item===null||ITEMS.includes(k.item)))&&
       Array.isArray(s.boxes)&&s.boxes.length<=64&&Array.isArray(s.hazards)&&s.hazards.length<=16&&Array.isArray(s.projectiles)&&s.projectiles.length<=16&&Array.isArray(s.events)&&s.events.length<=24;
   }
   return {K,LAPS,ITEMS,COUNTDOWN,create,start,step,stepKart,setInput,normalizeInput,snapshot,validSnapshot,place,NEUTRAL};

@@ -117,3 +117,53 @@ test('the room host can pick any new track and guests accept its views',()=>{
   const room=R.create({seed:'tracks'});room.join(0,{name:'A',signature:'s:a',kind:'toy',color:'#f00'});room.join(1,{name:'B',signature:'s:b',kind:'toy',color:'#0f0'});
   for(const id of NEW){room.setTrack(id);const v=room.view(1);assert.equal(v.trackId,id);assert(R.validView(v),id+' view valid');}
 });
+
+// Terrain contracts: protect against decorative-only hazards, repeated launch,
+// ground hits while airborne, and host/guest vertical state divergence.
+const E=require('../game/terrain.cjs');
+function terrainKart(t,s,lat=0,speed=25){const k=S.create({trackId:t.id,seats:[0]}).karts[0],p=T.at(t,s,lat);return Object.assign(k,p,{dist:s,idx:Math.round(s),lat,speed});}
+for(const id of T.ids)test(id+': driving over ramp launches once, lands, and can repeat next lap',()=>{
+  const t=T.build(id),r=E.features(t).find(f=>f.kind==='ramp'),k=terrainKart(t,r.s+r.len-.4,r.lat);
+  let launched=0,landed=false,maxHeight=0;
+  for(let i=0;i<500;i++){const was=k.air;const p=T.at(t,k.dist+12,0),d=Math.atan2(Math.sin(Math.atan2(p.x-k.x,p.z-k.z)-k.yaw),Math.cos(Math.atan2(p.x-k.x,p.z-k.z)-k.yaw));S.stepKart(k,{...S.NEUTRAL,throttle:1,steer:Math.max(-1,Math.min(1,-d*2))},1/60,t);if(!was&&k.air)launched++;if(was&&!k.air)landed=true;maxHeight=Math.max(maxHeight,k.y-T.sampleY(t,k.dist));if(landed)break;}
+  assert.equal(launched,1);assert(landed);assert(maxHeight>2);assert.equal(k.glide,0);assert(Number.isFinite(k.y));
+  const next=terrainKart(t,r.s+r.len-.4+t.N,r.lat);S.stepKart(next,{...S.NEUTRAL,throttle:1},1/30,t);assert(next.air);
+  for(const [speed,lat] of [[5,r.lat],[-25,r.lat],[25,t.half+1]]){const q=terrainKart(t,r.s+r.len-.2,lat,speed);S.stepKart(q,S.NEUTRAL,1/30,t);assert(!q.air,'slow/reverse/bypass');}
+});
+test('lava has safe, warning and active phases; snapshots use the same race clock',()=>{
+  const t=T.build('volcano'),f=E.features(t).find(f=>f.kind==='lava');
+  assert.equal(E.phase(f,0),'idle');assert.equal(E.phase(f,f.period-f.warning-f.active),'warning');assert.equal(E.phase(f,f.period-f.active),'active');
+  const time=f.period-f.active+100,a=E.sample(t,f,time),b=E.sample(t,f,time);assert.deepEqual(a,b);
+  for(const [clock,air,shouldHit] of [[0,0,false],[time,0,true],[time,1,false]]){const s=S.create({trackId:t.id,seats:[0]});s.phase='racing';s.t=clock;const k=terrainKart(t,f.s,f.lat,0);k.air=air;k.y+=air?15:0;k.vy=0;s.karts=[k];S.step(s,16);assert.equal(k.spin>0,shouldHit);}
+});
+test('ice changes grip only inside its patch, airborne bypasses it',()=>{
+  const t=T.build('snow'),f=E.features(t).find(f=>f.kind==='ice');
+  assert(E.surface(t,f.s,f.lat,false).grip<t.grip*.7);assert.equal(E.surface(t,f.s,t.half,false).grip,t.grip);assert.equal(E.surface(t,f.s,f.lat,true).grip,t.grip);
+});
+test('gliding brake descends faster; snapshots retain complete airborne state',()=>{
+  const t=T.build('yarn'),a=terrainKart(t,100),b=structuredClone(a);for(const k of [a,b])Object.assign(k,{air:1,glide:1,vy:0,y:20,airTime:1});
+  for(let i=0;i<30;i++){S.stepKart(a,{...S.NEUTRAL,throttle:1},1/60,t);S.stepKart(b,{...S.NEUTRAL,brake:1},1/60,t);}assert(b.y<a.y-1);
+  const s=S.create({trackId:t.id,seats:[0]});s.karts=[a];const snap=S.snapshot(s);for(const field of ['air','glide','vy','airTime','launchDist','envTime'])assert.equal(typeof snap.karts[0][field],'number',field);assert(S.validSnapshot(snap));
+  snap.karts[0].vy=Infinity;assert(!S.validSnapshot(snap));
+});
+test('airborne karts bypass ground pads and bananas; landing reward requires a stable approach',()=>{
+ const t=T.build('cheese'),s=S.create({trackId:t.id,seats:[0]}),pad=t.pads[0],k=terrainKart(t,pad.s+1,pad.lat);Object.assign(k,{air:1,glide:1,y:15,vy:0,airTime:1});s.karts=[k];s.phase='racing';s.hazards=[{id:1,x:k.x,y:0,z:k.z,owner:2,armedAt:0,kind:'banana'}];S.step(s,16);assert.equal(k.boost,0);assert.equal(k.spin,0);assert.equal(s.hazards.length,1);
+ for(const steer of [0,1]){const q=terrainKart(t,15);Object.assign(q,{air:1,glide:1,vy:-3,y:.01,airTime:2});S.stepKart(q,{...S.NEUTRAL,throttle:1,steer},1/60,t);assert.equal(q.air,0);assert.equal(q.boost>0,steer===0);}
+});
+test('airborne drift cannot charge; updraft provides lift and flight always ends',()=>{
+ const t=T.build('yarn'),f=E.features(t).find(x=>x.kind==='wind'),a=terrainKart(t,f.s+2,0,0),b=terrainKart(t,f.s+2,t.half,0);
+ for(const k of [a,b])Object.assign(k,{air:1,glide:1,vy:0,y:20,airTime:.3});
+ for(let i=0;i<30;i++)for(const k of [a,b])S.stepKart(k,{...S.NEUTRAL,drift:1,steer:.8},1/60,t);
+ assert(a.y>b.y+.5);assert.equal(a.charge,0);
+ for(let i=0;i<600;i++)S.stepKart(a,S.NEUTRAL,1/60,t);assert.equal(a.air,0);
+});
+test('obstacles can be bypassed and do not repeatedly stun a stopped kart',()=>{
+ for(const id of T.ids){const t=T.build(id),f=E.features(t).find(f=>f.r),time=f.kind==='lava'?f.period-f.active+100:0;
+   for(const [lat,expect] of [[E.sample(t,f,time).lat,true],[t.half+1,false]]){const s=S.create({trackId:id,seats:[0]}),k=terrainKart(t,f.s,lat,0);s.karts=[k];s.phase='racing';s.t=time;S.step(s,16);assert.equal(k.spin>0,expect,id);if(expect){const hits=k.terrainHits;for(let i=0;i<40;i++)S.step(s,16);assert.equal(k.terrainHits,hits,id+' immunity');}}
+ }
+});
+test('prediction and authority share crosswind movement, and a new race clears flight',()=>{
+ const t=T.build('city'),f=E.features(t).find(f=>f.kind==='wind'),s=S.create({trackId:t.id,seats:[0]}),k=terrainKart(t,f.s+3,0,20);s.karts=[k];s.phase='racing';s.t=1500;const pred=structuredClone(k);
+ S.setInput(s,0,{throttle:1});S.step(s,16);S.stepKart(pred,{...S.NEUTRAL,throttle:1},.016,t,true,1516);assert.equal(k.x,pred.x);assert.equal(k.z,pred.z);
+ const clean=S.create({trackId:t.id,seats:[0]}).karts[0];assert.equal(clean.air,0);assert.equal(clean.glide,0);assert.equal(clean.takeoffs,0);
+});

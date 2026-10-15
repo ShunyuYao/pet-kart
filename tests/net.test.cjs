@@ -19,7 +19,7 @@ function room({latency=15,maxPlayers=4}={}){
   const poll=me=>async({cursor=0,waitMs=0})=>{const t=Date.now();me.polls=(me.polls||[]).filter(x=>t-x<60000);if(me.polls.length>=1800){me.pollQuota=(me.pollQuota||0)+1;throw Error('quota_exceeded');}me.polls.push(t);if(me.cursor<=cursor&&waitMs&&(me===host?host.open:me.open))await new Promise(r=>{const t=setTimeout(r,waitMs);me.waiter=()=>{clearTimeout(t);me.waiter=null;r();};});
     const state=me===host?(!host.open?'closed':live().some(both)?'connected':'waiting'):(!me.open?'closed':both(me)?'connected':'waiting');
     return {cursor:me.cursor,events:me.events.filter(e=>e.cursor>cursor),transportState:state,epoch};};
-  const ctx=(me,extra)=>({invitationId:'00000000-0000-4000-8000-000000000001',artifactHash:'a'.repeat(64),protocol:{id:'pet-kart',version:2},role:me.role,peer:{sessionPeerId:guests[0]?.peerId||uuid(),displayName:'peer'},expiresAt:Date.now()+1e6,maxPlayers,...extra});
+  const ctx=(me,extra)=>({invitationId:'00000000-0000-4000-8000-000000000001',artifactHash:'a'.repeat(64),protocol:{id:'pet-kart',version:3},role:me.role,peer:{sessionPeerId:guests[0]?.peerId||uuid(),displayName:'peer'},expiresAt:Date.now()+1e6,maxPlayers,...extra});
   const hostSdk={
     getContext:async()=>ctx(host,{peers:live().map(g=>({sessionPeerId:g.peerId,displayName:g.name,status:both(g)?'connected':'invited'}))}),
     join:async()=>{host.joined=true;live().forEach(connect);return {status:live().some(both)?'connected':'waiting',epoch:1,limits:{},peerStatus:'online'};},

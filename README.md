@@ -4,7 +4,16 @@
 
 A single-file HTML 3D kart racer for the 吐梨邦 desktop pet. Opened inside the pet it races your current pet; "send and play together" starts a LAN room of up to 4 players; more friends join from the game window's "+ Invite" control.
 
-交付文件：[`dist/桌宠赛车.html`](dist/桌宠赛车.html)（约 720 KB，three.js 与全部代码内联，无 CDN、无服务器）。
+交付文件：[`dist/桌宠赛车.html`](dist/桌宠赛车.html)（约 740 KB，three.js 与全部代码内联，无 CDN、无服务器）。
+
+## 0.6 场景玩法
+
+- 五图都有真实坡面跳台：向前加速通过自动起跳，青色跳台自动开伞；左右转向，刹车快速下降，稳定落地有短加速。空中不蓄漂移、不吃地面加速带。
+- 奶酪环岛：小跳台与滚动奶酪；毛线桥：滑翔、上升风道与横穿毛线球；夜城：高架滑翔、机械路障与侧风。
+- 雪山：局部冰面进一步降低抓地力、固定冰块和滚雪球，可提前绕行或滑翔越过；火山：喷口亮环预警后喷发，冷却时安全通过，热气流帮助滑翔。
+- 机关不会封死整条赛道，电脑遵守同样规则并尝试绕行。环境以房主比赛时间计算，起跳、落地和伞状态同步给客端。新版游戏互动协议 v3，仍使用宿主 SDK v2，不与旧版游戏混局。
+
+Original toy-world terrain: ramps, automatic gliders with steering and brake-to-descend, landing boosts, rolling obstacles, local ice patches, crosswinds and warning/active/cooldown lava vents. Host-clock hazards and airborne states are shared across LAN peers. Game protocol v3; host SDK remains v2.
 
 ## 玩法
 
@@ -44,7 +53,7 @@ A single-file HTML 3D kart racer for the 吐梨邦 desktop pet. Opened inside th
 3. 比赛进行中加入的朋友先观战，本局结算后顶替一位电脑车手上场；中途离开的人，座位在结算后还给电脑。
 4. 房主关窗或离开，整局结束。
 
-房主权威：房主运行规则（`game/room.cjs`、`game/sim.cjs`），客人只发操作意图；客人本地预测自己的车并向房主结果收敛，其他车按房主比赛时间延迟 150 ms 插值显示，短暂缺包最多外推 100 ms；退出、换赛道、重开和颁奖会清空旧轨迹。星形拓扑：客人之间不直连，房主用 `to` / `from` 区分客人，并把每位车手的形象转发给其他人。使用宿主 `pet.sessions`（HTML 作品专用实验能力，协议 `pet-kart` v2，声明 `players: 4`），每位客人一条会话，分别遵守其限额。
+房主权威：房主运行规则（`game/room.cjs`、`game/sim.cjs`），客人只发操作意图；客人本地预测自己的车并向房主结果收敛，其他车按房主比赛时间延迟 150 ms 插值显示，短暂缺包最多外推 100 ms；退出、换赛道、重开和颁奖会清空旧轨迹。星形拓扑：客人之间不直连，房主用 `to` / `from` 区分客人，并把每位车手的形象转发给其他人。使用宿主 `pet.sessions`（HTML 作品专用实验能力，协议 `pet-kart` v3，声明 `players: 4`），每位客人一条会话，分别遵守其限额。
 
 需要支持多人房间（`players` 3–4）的宿主：吐梨邦测试版 0.26.0-internal.6 起支持，正式版暂不支持。旧宿主只接受 2 人声明，会拒绝整份作品：0.4 在旧宿主上连单人模式也打不开。旧宿主请用 [v0.3.0](https://github.com/ShunyuYao/pet-kart/tree/v0.3.0)（2 人版）。0.3 与 0.4 协议不同，不能混玩。
 
@@ -53,6 +62,7 @@ A single-file HTML 3D kart racer for the 吐梨邦 desktop pet. Opened inside th
 ```sh
 npm run build          # esbuild 打包成单个内联脚本（需要 esbuild，可用 PET_KART_ESBUILD 指定）
 npm run test:rules     # 规则与联机协议（Node）
+npm run test:terrain:e2e # 隐藏 Electron 真实键盘：五图起跳/滑翔/落地、冰面和火山喷口
 npm run test:browser   # 隐藏 Electron 打开最终 HTML，CDP 真实键盘
 npm run test:remote-motion # 两个真实宿主：开车时观察对方车，覆盖正常与成批收包
 npm run test:remote-motion:3d # 同一路径使用 3D 布偶

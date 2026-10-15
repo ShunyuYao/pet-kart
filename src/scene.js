@@ -5,6 +5,7 @@ import T from '../game/track.cjs';
 import {buildAvatar} from './avatars.js';
 import {createCeremony} from './ceremony.js';
 import {decorate} from './worlds.js';
+import {terrainScene,glider} from './terrain-scene.js';
 
 const canvasTex=(w,h,draw,{repeat,srgb=true}={})=>{const c=document.createElement('canvas');c.width=w;c.height=h;draw(c.getContext('2d'),w,h);const t=new THREE.CanvasTexture(c);if(srgb)t.colorSpace=THREE.SRGBColorSpace;if(repeat){t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(...repeat);}t.anisotropy=4;return t;};
 function noise(g,w,h,base,spread,n=4000,size=2){g.fillStyle=base;g.fillRect(0,0,w,h);for(let i=0;i<n;i++){const v=(Math.random()-.5)*spread;g.fillStyle=`rgba(${v>0?255:0},${v>0?255:0},${v>0?255:0},${Math.abs(v)})`;g.fillRect(Math.random()*w,Math.random()*h,size,size);}}
@@ -78,7 +79,7 @@ export function createWorld(canvas){
   const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(68,1,.1,1400);
   const hemi=new THREE.HemisphereLight('#ffffff','#7fbf6a',1.25);scene.add(hemi);
   const sun=new THREE.DirectionalLight('#fff4de',2.1);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-45,right:45,top:45,bottom:-45,near:1,far:260});sun.shadow.bias=-.0006;scene.add(sun,sun.target);
-  let trackGroup=null,track=null,boxes=[],pads=[],theme=null,decor=null;
+  let trackGroup=null,track=null,boxes=[],pads=[],theme=null,decor=null,terrain=null;
   const karts=new Map(),hazards=new Map(),projectiles=new Map(),sparks=makeSparks();scene.add(sparks.points);
   const tagCache=new Map();
   let onCeremonySound=()=>{};
@@ -87,7 +88,7 @@ export function createWorld(canvas){
   function setTrack(id){
     if(track?.id===id)return;
     if(trackGroup){scene.remove(trackGroup);trackGroup.traverse(o=>{o.geometry?.dispose();if(o.material){[].concat(o.material).forEach(m=>{m.map?.dispose();m.dispose();});}});}
-    track=T.build(id);theme=track.theme;trackGroup=new THREE.Group();scene.add(trackGroup);
+    track=T.build(id);theme=track.theme;trackGroup=new THREE.Group();scene.add(trackGroup);terrain=terrainScene(track,trackGroup);
     // Light, sky and fog per track (the night city is lit by its windows and neon).
     const L={hemi:1.25,sun:2.1,sunColor:'#fff4de',exposure:1.05,fog:[140,520],...theme.light};
     hemi.intensity=L.hemi;hemi.color.set(L.sky||'#ffffff');sun.intensity=L.sun;sun.color.set(L.sunColor);renderer.toneMappingExposure=L.exposure;
@@ -157,10 +158,11 @@ export function createWorld(canvas){
     if(k.token!==token){avatar.dispose?.();return;}
     if(k.root)scene.remove(k.root);k.avatar?.dispose?.();
     const kart=makeKart(profile.color,seat+1),root=new THREE.Group(),body=new THREE.Group();
+    const canopy=glider(profile.color);body.add(canopy);
     root.add(body);body.add(kart.group);body.add(avatar.object);scene.add(root);
     const stars=new THREE.Group();for(let i=0;i<3;i++){const s=new THREE.Mesh(new THREE.OctahedronGeometry(.16),new THREE.MeshBasicMaterial({color:'#ffe066'}));s.position.set(Math.cos(i*2.1)*.6,0,Math.sin(i*2.1)*.6);stars.add(s);}stars.position.y=2.2;stars.visible=false;body.add(stars);
     const tag=nameTag(profile.name,profile.color);tag.position.y=2.75;root.add(tag);
-    Object.assign(k,{root,body,kart,avatar,stars,tag,signature:profile.signature,color:profile.color,name:profile.name,kind:avatar.kind,spinVis:0,roll:0});
+    Object.assign(k,{root,body,kart,avatar,stars,tag,canopy,signature:profile.signature,color:profile.color,name:profile.name,kind:avatar.kind,spinVis:0,roll:0});
   }
   function removeDriver(seat){const k=karts.get(seat);if(k?.root)scene.remove(k.root);karts.delete(seat);}
   function makeSparks(){
@@ -188,7 +190,8 @@ export function createWorld(canvas){
       k.root.position.set(s.x,s.y,s.z);k.root.rotation.y=s.yaw;
       k.spinVis=s.spin>0?k.spinVis+dt*14:k.spinVis*Math.pow(.001,dt);
       const driftYaw=s.drift?-s.driftDir*.38:0;k.body.rotation.y+=((driftYaw+k.spinVis)-k.body.rotation.y)*Math.min(1,dt*10);
-      k.body.rotation.z=-(s.steer||0)*.05*Math.min(1,Math.abs(s.speed)/20);
+      k.canopy.visible=!!s.glide;k.body.rotation.x=s.air?Math.max(-.2,Math.min(.25,-(s.vy||0)*.025)):0;
+      k.body.rotation.z=-(s.steer||0)*(s.air?.2:.05)*Math.min(1,Math.abs(s.speed)/20);
       k.body.position.y=s.drift?Math.abs(Math.sin(clock*30))*.03:0;
       k.roll+=s.speed*dt/.33;
       for(const w of k.kart.wheels){w.tire.rotation.x=k.roll;if(w.front)w.pivot.rotation.y=-(s.steer||0)*.45;}
@@ -205,13 +208,13 @@ export function createWorld(canvas){
       if(boosting&&Math.random()<.8)sparks.emit(s.x-fx*1.7,s.y+.5,s.z-fz*1.7,-fx*6,.5,-fz*6,'#ffcc66',.25);
     }
     sparks.update(dt);
-    decor?.update(dt,camera.position);
+    decor?.update(dt,camera.position);terrain?.update(race?.t||0);
     // Chase camera on our kart; slow orbit when no kart is ours yet.
     let me=states?.[you];
     if(!me&&track&&karts.get(you)?.root){
       // Showcase turntable before the race: our kart parked on the grid, camera circling it.
       const g=T.at(track,track.N-12,0);me={x:g.x,y:g.y,z:g.z,yaw:g.yaw,speed:0,steer:Math.sin(clock*1.3)*.6,spin:0,boost:0};
-      const k=karts.get(you);k.root.visible=true;k.root.position.set(me.x,me.y,me.z);k.root.rotation.y=me.yaw;k.body.rotation.set(0,0,0);k.tag.visible=false;
+      const k=karts.get(you);k.root.visible=true;k.root.position.set(me.x,me.y,me.z);k.root.rotation.y=me.yaw;k.body.rotation.set(0,0,0);k.tag.visible=false;k.canopy.visible=false;
       k.kart.wheel.rotation.z=me.steer*.9;for(const w of k.kart.wheels)if(w.front)w.pivot.rotation.y=-me.steer*.45;k.avatar.update(dt,{steer:me.steer,spin:0,t:clock});
       for(const [seat,o] of karts)if(seat!==you&&o.root)o.root.visible=false;
       const a=me.yaw+Math.sin(clock*.35)*1.25,want=new THREE.Vector3(me.x+Math.sin(a)*4.4,me.y+1.9,me.z+Math.cos(a)*4.4);
@@ -222,7 +225,7 @@ export function createWorld(canvas){
     if(me){
       // Smooth only the heading, never the position: no rubber-band lag at speed.
       if(!cam.init)cam.yaw=me.yaw;let dy=me.yaw-cam.yaw;dy=Math.atan2(Math.sin(dy),Math.cos(dy));cam.yaw+=dy*Math.min(1,dt*(me.spin>0?2:6));cam.init=true;
-      const back=phase==='results'?9:6.2,height=phase==='results'?4:2.6,orbit=phase==='results'?clock*.35:0;
+      const back=phase==='results'?9:me.glide?10:6.2,height=phase==='results'?4:me.glide?4:2.6,orbit=phase==='results'?clock*.35:0;
       const ox=Math.sin(cam.yaw+orbit),oz=Math.cos(cam.yaw+orbit),fx=Math.sin(cam.yaw),fz=Math.cos(cam.yaw);
       cam.h=(cam.h??me.y)+(me.y-(cam.h??me.y))*Math.min(1,dt*5);
       cam.pos.set(me.x-ox*back,cam.h+height,me.z-oz*back);cam.look.set(me.x+fx*3,cam.h+1.1,me.z+fz*3);
@@ -243,6 +246,6 @@ export function createWorld(canvas){
   return {setTrack,setDriver,removeDriver,update,resize,renderer,startCeremony,
     stopCeremony:()=>{ceremony.stop();cam.init=false;},skipCeremony:()=>ceremony.skip(),get ceremonyDone(){return ceremony.done;},get ceremonyActive(){return ceremony.active;},
     set onCeremonySound(f){onCeremonySound=f;},
-    diagnostics:()=>({ceremony:ceremony.diagnostics(),track:track?.id,drivers:[...karts].map(([seat,k])=>({seat,kind:k.kind,name:k.name,visible:!!k.root?.visible})),calls:renderer.info.render.calls,triangles:renderer.info.render.triangles}),
+    diagnostics:()=>({terrain:terrain?.diagnostics(),ceremony:ceremony.diagnostics(),track:track?.id,drivers:[...karts].map(([seat,k])=>({seat,kind:k.kind,name:k.name,visible:!!k.root?.visible,glider:!!k.canopy?.visible,y:k.root?.position.y})),calls:renderer.info.render.calls,triangles:renderer.info.render.triangles}),
     destroy(){removeEventListener('resize',resize);renderer.dispose();}};
 }

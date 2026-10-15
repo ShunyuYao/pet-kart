@@ -262,13 +262,14 @@ function reconcile(race){
   const a=.18;pred.x+=(sx-pred.x)*a;pred.z+=(sz-pred.z)*a;pred.speed+=(server.speed-pred.speed)*.25;
   let dy=server.yaw-pred.yaw;dy=Math.atan2(Math.sin(dy),Math.cos(dy));pred.yaw+=dy*.2;pred.dist+=(server.dist-pred.dist)*a;
   if(server.boost>pred.boost+.25)pred.boost=server.boost;
-  for(const f of ['item','rolling','lap','finishedAt','place','itemUsed'])pred[f]=server[f];
+  if(server.air!==pred.air||server.glide!==pred.glide){pred.y=server.y;pred.vy=server.vy;}else{pred.y+=(server.y-pred.y)*.3;pred.vy+=(server.vy-pred.vy)*.3;}
+  for(const f of ['air','glide','airTime','launchDist','envTime','terrainCooldown','surface','takeoffs','landings','landingBoosts','terrainHits','item','rolling','lap','finishedAt','place','itemUsed'])pred[f]=server[f];
 }
 function remoteStates(){return remoteMotion.sample(performance.now());}
 
 // ---------- HUD + events ----------
 const nameOf=s=>view.players.find(p=>p.seat===s)?.name||'对手';
-const EVENT_TEXT={hit:s=>s===view.you?'💫 打滑了！':'💥 '+nameOf(s)+' 中招了！',box:s=>s===view.you?'🎁 抽道具…':null,lap:(s,e)=>s===view.you?(e.lap===view.race.laps?'🔥 最后一圈！':'第 '+e.lap+' 圈'):null,finish:s=>s===view.you?'🏁 冲线！':nameOf(s)+' 冲线了！'};
+const EVENT_TEXT={launch:(s,e)=>s===view.you?(e.glide?'🪂 滑翔 · 刹车下降':'✨ 飞跃跳台！'):null,land:(s,e)=>s===view.you?(e.boost?'⚡ 稳稳落地 · 加速！':'着陆！'):null,hit:(s,e)=>s===view.you?({lava:'🔥 小心岩浆喷口！',snowball:'❄️ 撞到滚雪球！',iceblock:'🧊 撞到冰块！',gate:'🚧 撞到移动路障！',cheese:'🧀 撞到滚动奶酪！'}[e.cause]||'💫 打滑了！'):'💥 '+nameOf(s)+' 中招了！',box:s=>s===view.you?'🎁 抽道具…':null,lap:(s,e)=>s===view.you?(e.lap===view.race.laps?'🔥 最后一圈！':'第 '+e.lap+' 圈'):null,finish:s=>s===view.you?'🏁 冲线！':nameOf(s)+' 冲线了！'};
 function processEvents(race){
   for(const e of race.events){
     if(e.seq<=lastEventSeq)continue;lastEventSeq=e.seq;

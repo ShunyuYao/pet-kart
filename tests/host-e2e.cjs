@@ -1,6 +1,6 @@
 'use strict';
 // Actual production UDP discovery, real file-send control and byte delivery,
-// first-use invitation consent + matching TLS pairing codes, hosted game/SDK.
+// Explicit invitation consent + host-managed TLS certificate binding, hosted game/SDK.
 // No invitation fixture, trust seeding, mock broker or synthesized game results.
 // Hidden windows/real CDP keys prove business behavior, not native OS focus or
 // physical two-computer networking. Only OS keystore is a disposable AES fixture.
@@ -133,21 +133,21 @@ function classifyDialog(init, text) {
   if (/加入.*(?:对局|游戏)|接受.*邀请|邀请.*联机|一起.*玩|联机邀请/.test(init.title || text)) return 'accept';
   return null;
 }
-async function approvals(a, b, expectPair = true) {
-  const seen = new Set(), pairing = new Map(); let accepted = 0, sdk = 0, paired = false;
+async function approvals(a, b) {
+  const seen = new Set(); let accepted = 0;
   await wait(async () => {
     for (const app of [a, b]) for (const page of (await targets(app)).filter(t => t.url.includes('/dialog.html') && !seen.has(t.id))) {
       const init = await H.evalIn(page, 'dialogAPI.getInit()', 3000).catch(() => null); if (!init) continue;
       const text = await H.evalIn(page, 'document.body.innerText'); if(!text.trim())continue; const kind = classifyDialog(init, text); if (!kind || kind==='pair'&&!/(?:[0-9A-F]{4}[ -]){3}[0-9A-F]{4}/i.test(text)) continue;
       seen.add(page.id); report.dialogs.push({ app: app.label, kind, title: init.title, text }); await screenshot(page, app.label + '-' + kind + '-' + seen.size);
-      if (kind === 'pair') { assert(expectPair, 'trusted peers must not pair again'); pairing.set(app.label, { app, page, code: text.match(/(?:[0-9A-F]{4}[ -]){3}[0-9A-F]{4}/i)[0].replaceAll(' ', '').replaceAll('-', '').toLowerCase() }); }
-      else { if (kind === 'sdk') {sdk++;report.sdkGrants.push(app.label);} else accepted++; await activateClosingButton(app.cdp, page, '.btn-primary'); }
+      assert.notEqual(kind, 'pair', 'current host must bind selected recipient without a manual pairing dialog');
+      if (kind === 'sdk') report.sdkGrants.push(app.label); else accepted++;
+      await activateClosingButton(app.cdp, page, '.btn-primary');
     }
-    if (pairing.size === 2 && !paired) { const [left, right] = [...pairing.values()]; assert.equal(left.code, right.code); assert.equal(left.code.length, 16); await activateClosingButton(left.app.cdp, left.page, '.btn-primary'); await activateClosingButton(right.app.cdp, right.page, '.btn-primary'); paired = true; check('both independently presented TLS pairing codes match before explicit confirmations'); }
     const pages = await Promise.all([a, b].map(async app => { const page = (await targets(app)).find(t => t.url.startsWith('pet-work:') && !t.url.includes('thumbnail=1')); if (!page) return null; if(app.game?.id!==page.id){app.game=page;await H.cdp(page,'Emulation.setFocusEmulationEnabled',{enabled:true});await H.cdp(page,'Page.captureScreenshot',{format:'png'});await recordErrors(page);} const ready = await H.evalIn(page, 'window.__kart?.state.view?.players?.length === 4 && window.__kart.state.view.players.some(p=>p.seat===window.__kart.state.view.you) && !document.querySelector("#ready").disabled', 3000).catch(() => false); if (ready) { app.game = page; return page; } return null; }));
     return pages.every(Boolean);
-  }, 'invitation, first pairing, SDK permission and current pets', 65000);
-  assert(accepted >= 1, 'recipient must accept each game invitation'); assert(!expectPair || paired); assert([a.label,b.label].every(label=>report.sdkGrants.includes(label)), 'both fresh hosts require explicit SDK consent, including initial share-only approval');
+  }, 'invitation, automatic TLS connection, SDK permission and current pets', 65000);
+  assert(accepted >= 1, 'recipient must accept each game invitation'); assert([a.label,b.label].every(label=>report.sdkGrants.includes(label)), 'both fresh hosts require explicit SDK consent, including initial share-only approval');
   for (const app of [a, b]) { await watch(app.game, app.label + '-game'); assert.equal(await H.evalIn(app.game, '!document.querySelector("#server-address,#room-code") && document.querySelector("#title-panel").hidden'), true); const context = await H.evalIn(app.game, 'pet.sessions.getContext()'); assert.equal(context.role, app === a ? 'host' : 'guest'); assert.equal(context.artifactHash, hash(source)); app.context = context; }
   // The host context keeps the first invitation; each later guest has its own, listed in the host's peers.
   if (a.context.peers.length === 1) assert.equal(a.context.invitationId, b.context.invitationId);
@@ -197,7 +197,7 @@ const {connect}=require('./cdp.cjs');
 async function autopilot(app,held){
   // Real key presses only, over one persistent CDP session: read our kart, steer like a player.
   app.cdpS??=await connect(app.game);
-  const s=await app.cdpS.evaluate('(()=>{const s=window.__kart.state,r=s.view?.race;if(!r)return null;const me=s.pred||r.karts.find(x=>x.seat===s.view.you);return {phase:r.phase,trackId:r.trackId,x:me.x,z:me.z,yaw:me.yaw,dist:me.dist,speed:me.speed,item:me.item,rolling:me.rolling};})()');
+  const s=await app.cdpS.evaluate('(()=>{const s=window.__kart.state,r=s.view?.race;if(!r)return null;const me=s.pred||r.karts.find(x=>x.seat===s.view.you);return {phase:r.phase,trackId:r.trackId,x:me.x,z:me.z,yaw:me.yaw,dist:me.dist,speed:me.speed,item:me.item,rolling:me.rolling,air:me.air,glide:me.glide,y:me.y,landings:me.landings,authority:r.karts.find(x=>x.seat===s.view.you),rendered:window.__kart.world().drivers};})()');
   if(!s||s.phase!=='racing')return s;
   const t=T.build(s.trackId),p=T.at(t,s.dist+9+Math.max(0,s.speed)*.35,0);
   let diff=Math.atan2(p.x-s.x,p.z-s.z)-s.yaw;diff=Math.atan2(Math.sin(diff),Math.cos(diff));
@@ -228,13 +228,14 @@ async function inviteFromControls(a,c){
   assert.equal(hash(incoming.file.savedPath),hash(source));
   const receipt=await wait(async()=>{for(const page of (await targets(c)).filter(t=>t.url.includes('/dialog.html')))if(await H.evalIn(page,'!!document.querySelector("[data-work-open]")').catch(()=>false))return page;return null;},'work receipt on c');
   await activateClosingButton(c.cdp,receipt,'[data-work-open]');
-  await approvals(a,c,process.env.KART_AUTO_PAIRING!=='1');
+  await approvals(a,c);
   assert.equal(a.game.id,gameId);assert.equal(await H.evalIn(a.game,'performance.timeOrigin'),origin,'host game never reloaded');
   check('control-bar invite brings a third host into the open room without reloading the host game');
 }
 async function kartPlay(a,b,c){
   const guests=[b,c],all=[a,b,c];
-  const expected=process.env.KART_EXPECT_3D==='1'?'doll3d':'sprite';
+  // This path installs realtime doll packs into current hosts; automatic 3D is required.
+  const expected='doll3d';
   const kindOf={a:expected,b:expected,c:'sprite'};// c keeps its built-in 2D character
   for(const [app,seat] of [[a,0],[b,1],[c,2]]){
     const s=await wait(async()=>{const x=await state(app);return x.driver?.kind===kindOf[app.label]&&x.view?.you===seat&&x.view.players.filter(p=>!p.ai).length===3?x:null;},'driver + 3-human lobby '+app.label,45000);
@@ -269,12 +270,15 @@ async function kartPlay(a,b,c){
   await applyMain(a,'rat-doll-female');
   await wait(async()=>(await state(b)).view.players[0].name!==names[0]&&(await state(c)).view.players[0].name!==names[0],'host pet change reaches both guests',30000);
   check('host changes desktop pet mid-race; both guests see the new driver');
-  const held={a:{},b:{},c:{}};let usedItem=false;
+  const held={a:{},b:{},c:{}},flight={a:{},b:{},c:{}};let usedItem=false;
   await wait(async()=>{
     const p={};for(const app of all)p[app.label]=await autopilot(app,held[app.label]);
+    for(const app of all){const q=p[app.label],f=flight[app.label];if(q?.air&&q.glide&&q.authority?.air&&Math.abs(q.y-q.authority.y)<6)f.predictedFlight=true;if(q?.landings>0)f.landed=true;if(q?.rendered?.some(d=>d.seat!=='abc'.indexOf(app.label)&&d.glider))f.remoteCanopy=true;}
     if(!usedItem&&p.c?.item&&!p.c.rolling){await c.cdpS.press('KeyE');usedItem=p.c.item;}
     return all.every(app=>p[app.label]?.phase==='results');
   },'race to results with real keys',300000);
+  for(const app of all){assert(flight[app.label].predictedFlight&&flight[app.label].landed&&flight[app.label].remoteCanopy,'LAN flight, landing and remote canopy '+app.label+' '+JSON.stringify(flight));}
+  check('three real hosts synchronize flight, landing, guest height prediction and remote canopy',flight);
   for(const app of all){for(const key of ['ArrowUp','ArrowLeft','ArrowRight'])await k(app.game,key,'keyUp');app.cdpS?.close();}
   if(usedItem)check('second guest used an item over LAN',{item:usedItem});
   const cers=[];for(const app of all)cers.push(await wait(async()=>{const x=(await world(app)).ceremony;return x.active&&x.ready&&x.t>4600?x:null;},'ceremony '+app.label,20000));
@@ -311,13 +315,13 @@ async function kartPlay(a,b,c){
     const a=await boot('a',ap,[bp,cp]),b=await boot('b',bp,[ap,cp]);
     if(process.env.KART_REMOTE_SMOOTHNESS==='1'){
       if(process.env.KART_EXPECT_3D==='1'){for(const app of [a,b])await installAppearances(app);await applyMain(a,'rat-doll-male');await applyMain(b,'rat-doll-female');}
-      await sendGame(a,b);await approvals(a,b,process.env.KART_AUTO_PAIRING!=='1');
+      await sendGame(a,b);await approvals(a,b);
       await require('./remote-smoothness-host.cjs').run({a,b,H,wait,state,activateButton,check,screenshot,json,evidence,report,autopilot,closeWork});
     }else{
       const c=await boot('c',cp,[ap,bp]);
       for(const app of [a,b])await installAppearances(app);
       await applyMain(a,'rat-doll-male');await applyMain(b,'rat-doll-female');
-      await nearby(a,c);await sendGame(a,b);await approvals(a,b,process.env.KART_AUTO_PAIRING!=='1');await inviteFromControls(a,c);await kartPlay(a,b,c);
+      await nearby(a,c);await sendGame(a,b);await approvals(a,b);await inviteFromControls(a,c);await kartPlay(a,b,c);
     }
   }catch(error){
     report.failures.push(error.message);report.error=error.stack;console.error(error);

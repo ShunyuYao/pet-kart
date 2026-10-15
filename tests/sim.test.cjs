@@ -30,7 +30,8 @@ test('input normalization clamps values and keeps item counter monotonic',()=>{
   assert.equal(S.normalizeInput({item:-1},a).item,5);
 });
 test('drift charge releases a mini-turbo',()=>{
-  const s=S.create({seed:3});S.start(s);run(s,3300);run(s,2500,{0:()=>({throttle:1})});
+  // Yarn's unobstructed starting approach keeps this a ground-drift test.
+  const s=S.create({seed:3,trackId:'yarn'});S.start(s);run(s,3300);run(s,1200,{0:()=>({throttle:1})});
   run(s,2200,{0:()=>({throttle:1,steer:.8,drift:1})});const k=s.karts[0];assert(k.drift&&k.charge>1.9,'charge '+k.charge);
   run(s,50,{0:()=>({throttle:1,steer:0,drift:0})});assert(k.boost>0.8&&k.boostKind==='orange');
   assert(s.events.some(e=>e.type==='boost'&&e.kind==='orange'));

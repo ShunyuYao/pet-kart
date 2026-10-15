@@ -26,3 +26,9 @@ test('teleports snap and yaw crosses the shortest arc',()=>{
  const r=create();r.push(view(0,0),1000);r.push(view(50,100),1050);assert.equal(r.sample(1175)[0].x,100);
  const q=create(),a=view(0,0),b=view(50,1);a.race.karts[0].yaw=Math.PI-.1;b.race.karts[0].yaw=-Math.PI+.1;q.push(a,1000);q.push(b,1050);assert(Math.abs(q.sample(1175)[0].yaw-Math.PI)<1e-9);
 });
+test('remote glider height interpolates on host time and reset clears flight',()=>{
+ const a=create(),b=create();
+ for(let t=0;t<=400;t+=50){const v=view(t,t*.02);Object.assign(v.race.karts[0],{y:t*.01,air:1,glide:1,vy:10});a.push(v,1000+t);b.push(v,1000+Math.ceil(t/180)*180);}
+ let previous=-Infinity;for(let now=1400;now<1530;now+=16){const x=a.sample(now)[0],y=b.sample(now)[0];assert.deepEqual(x,y);assert(x.y>previous);assert.equal(x.glide,1);previous=x.y;}
+ const landed=view(0,0);landed.raceNo=2;Object.assign(landed.race.karts[0],{air:0,glide:0,vy:0});a.push(landed,1600);assert.equal(a.sample(1600)[0].y,0);assert.equal(a.sample(1600)[0].glide,0);
+});

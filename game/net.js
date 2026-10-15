@@ -1,5 +1,5 @@
 // LAN session adapter over the host's `pet.sessions` bridge (HTML work, experimental).
-// Room of up to 4 (protocol v2): the host is seat 0 and runs the authoritative room;
+// Room of up to 4 (protocol v3): the host is seat 0 and runs the authoritative room;
 // each guest (seats 1-3, in arrival order) sends intents only and talks to the host.
 // The host addresses a guest with `to` and learns the sender from `from`; it relays
 // every driver's avatar to the other guests (star topology, guests never connect).
@@ -11,7 +11,7 @@
   const CPUS=[{name:'电脑 · 奶酪队长',signature:'builtin:cpu-cheddar',kind:'toy',color:'#6c7cff'},
     {name:'电脑 · 棉花教练',signature:'builtin:cpu-cotton',kind:'toy',color:'#22c55e'},
     {name:'电脑 · 布丁车手',signature:'builtin:cpu-pudding',kind:'toy',color:'#f59e0b'}];
-  const PROTOCOL={id:'pet-kart',version:2},PURPOSE='kart.profile.v1',SEND_MS=50,SIM_MS=1000/60,STALE_MS=3000,GUEST_SEATS=[1,2,3];
+  const PROTOCOL={id:'pet-kart',version:3},PURPOSE='kart.profile.v1',SEND_MS=50,SIM_MS=1000/60,STALE_MS=3000,GUEST_SEATS=[1,2,3];
   const pause=ms=>new Promise(r=>setTimeout(r,ms));
   const encode=value=>{const b=new TextEncoder().encode(JSON.stringify(value));let s='';for(let i=0;i<b.length;i+=8192)s+=String.fromCharCode(...b.subarray(i,i+8192));return btoa(s);};
   const decode=value=>{if(typeof value!=='string'||value.length>1400000)throw Error('invalid_profile');return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(value),c=>c.charCodeAt(0))));};

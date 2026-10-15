@@ -1,5 +1,5 @@
 // Computer driver for solo races. Produces the same intent shape a player sends.
-(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory(require('./track.cjs'));else root.KartAI=factory(root.KartTrack);})(globalThis,function(T){
+(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory(require('./track.cjs'),require('./terrain.cjs'));else root.KartAI=factory(root.KartTrack);})(globalThis,function(T,E){
   'use strict';
   function create({skill=.9,seed=7}={}){
     let item=0,holdSince=0,wobble=seed%10/10;
@@ -19,7 +19,12 @@
         if(d<=16)tight=Math.max(tight,turn);
       }
       const look=Math.max(7,Math.min(10+Math.max(0,k.speed)*.55,6+target*.6)),laneBias=Math.sin(wobble*3+seat)*track.half*.35*Math.max(0,1-tight*2);
-      const p=T.at(track,k.dist+look,laneBias);
+      let lane=laneBias;
+      for(const f of E.features(track)){const d=E.distance(track,f.s,k.dist);if(d< -4||d>Math.max(24,k.speed*1.3)||!f.r)continue;
+        const obstacle=E.sample(track,f,state.t+Math.max(0,d)/Math.max(8,k.speed)*1000);
+        lane=(obstacle.lat>0?-1:1)*Math.min(track.half-1.2,f.r+2);
+      }
+      const p=T.at(track,k.dist+look,lane);
       const want=Math.atan2(p.x-k.x,p.z-k.z);let diff=want-k.yaw;diff=Math.atan2(Math.sin(diff),Math.cos(diff));
       // yaw decreases when steering right (steer > 0).
       const steer=Math.max(-1,Math.min(1,-diff*2.4));
