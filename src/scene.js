@@ -196,16 +196,16 @@ export function createWorld(canvas){
       k.roll+=s.speed*dt/.33;
       for(const w of k.kart.wheels){w.tire.rotation.x=k.roll;if(w.front)w.pivot.rotation.y=-(s.steer||0)*.45;}
       k.kart.wheel.rotation.z=(s.steer||0)*.9;
-      const boosting=s.boost>0;k.kart.flames.forEach(f=>{f.visible=boosting;f.scale.setScalar(.8+Math.random()*.5);f.material.color.set(s.boostKind==='orange'?'#ff8a2a':s.boostKind==='blue'?'#58b4ff':'#ffb347');});
+      const boosting=s.boost>0||s.nitroTime>0;k.kart.flames.forEach(f=>{f.visible=boosting;f.scale.setScalar((s.nitroTime>0?1.5:.8)+Math.random()*.5);f.material.color.set(s.nitroTime>0?'#61edff':s.boostKind==='orange'?'#ff8a2a':s.boostKind==='blue'?'#58b4ff':'#ffb347');});
       k.stars.visible=s.spin>0;k.stars.rotation.y+=dt*6;
       k.tag.visible=seat!==you;
-      k.avatar.update(dt,{steer:s.steer||0,spin:s.spin||0,boost:s.boost,t:clock});
+      k.avatar.update(dt,{steer:s.steer||0,spin:s.spin||0,boost:Math.max(s.boost,s.nitroTime||0),t:clock});
       // Particles: drift sparks by charge level, dust off-road, exhaust while boosting.
       const fx=Math.sin(s.yaw),fz=Math.cos(s.yaw),rx=-fz,rz=fx;
       if(s.drift&&Math.abs(s.speed)>8){const color=s.charge>=1.9?'#ff9d2e':s.charge>=.9?'#4fb3ff':'#fff3b0';
         for(const side of [-1,1])if(Math.random()<.9){const px=s.x-fx*.9+rx*side*.85,pz=s.z-fz*.9+rz*side*.85;sparks.emit(px,s.y+.15,pz,(Math.random()-.5)*3-fx*3,2+Math.random()*2,(Math.random()-.5)*3-fz*3,color);}}
       if(s.off&&Math.abs(s.speed)>6&&Math.random()<.6)sparks.emit(s.x-fx+rx*(Math.random()-.5),s.y+.2,s.z-fz+rz*(Math.random()-.5),-fx*2,1.5,-fz*2,'#b98c52',.5);
-      if(boosting&&Math.random()<.8)sparks.emit(s.x-fx*1.7,s.y+.5,s.z-fz*1.7,-fx*6,.5,-fz*6,'#ffcc66',.25);
+      if(boosting&&Math.random()<.8)sparks.emit(s.x-fx*1.7,s.y+.5,s.z-fz*1.7,-fx*6,.5,-fz*6,s.nitroTime>0?'#61edff':'#ffcc66',.25);
     }
     sparks.update(dt);
     decor?.update(dt,camera.position);terrain?.update(race?.t||0);
@@ -229,7 +229,7 @@ export function createWorld(canvas){
       const ox=Math.sin(cam.yaw+orbit),oz=Math.cos(cam.yaw+orbit),fx=Math.sin(cam.yaw),fz=Math.cos(cam.yaw);
       cam.h=(cam.h??me.y)+(me.y-(cam.h??me.y))*Math.min(1,dt*5);
       cam.pos.set(me.x-ox*back,cam.h+height,me.z-oz*back);cam.look.set(me.x+fx*3,cam.h+1.1,me.z+fz*3);
-      camera.fov+=((68+(me.boost>0?9:0)+Math.min(8,Math.abs(me.speed)*.18))-camera.fov)*Math.min(1,dt*4);camera.updateProjectionMatrix();
+      camera.fov+=((68+(me.nitroTime>0?13:me.boost>0?9:0)+Math.min(8,Math.abs(me.speed)*.18))-camera.fov)*Math.min(1,dt*4);camera.updateProjectionMatrix();
       sun.position.set(me.x+40,me.y+90,me.z+25);sun.target.position.set(me.x,me.y,me.z);
     }else if(track){const a=clock*.08;cam.pos.set(Math.cos(a)*170,90,Math.sin(a)*170);cam.look.set(40,0,0);cam.init=false;sun.position.set(80,140,40);sun.target.position.set(0,0,0);}
     camera.position.copy(cam.pos);camera.lookAt(cam.look);
@@ -246,6 +246,6 @@ export function createWorld(canvas){
   return {setTrack,setDriver,removeDriver,update,resize,renderer,startCeremony,
     stopCeremony:()=>{ceremony.stop();cam.init=false;},skipCeremony:()=>ceremony.skip(),get ceremonyDone(){return ceremony.done;},get ceremonyActive(){return ceremony.active;},
     set onCeremonySound(f){onCeremonySound=f;},
-    diagnostics:()=>({terrain:terrain?.diagnostics(),ceremony:ceremony.diagnostics(),track:track?.id,drivers:[...karts].map(([seat,k])=>({seat,kind:k.kind,name:k.name,visible:!!k.root?.visible,glider:!!k.canopy?.visible,y:k.root?.position.y})),calls:renderer.info.render.calls,triangles:renderer.info.render.triangles}),
+    diagnostics:()=>({terrain:terrain?.diagnostics(),ceremony:ceremony.diagnostics(),track:track?.id,drivers:[...karts].map(([seat,k])=>({seat,kind:k.kind,name:k.name,visible:!!k.root?.visible,glider:!!k.canopy?.visible,nitroFlame:k.kart.flames.some(f=>f.visible&&f.material.color.getHexString()==='61edff'),y:k.root?.position.y})),calls:renderer.info.render.calls,triangles:renderer.info.render.triangles}),
     destroy(){removeEventListener('resize',resize);renderer.dispose();}};
 }

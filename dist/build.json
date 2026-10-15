@@ -1,13 +1,13 @@
 {
   "file": "dist/桌宠赛车.html",
-  "bytes": 756508,
-  "sha256": "0d20ff977a0b72535a01f4b82ab4e6be6b912c778fd99a17134abbe0daaaf7a8",
-  "version": "0.6.0",
+  "bytes": 760894,
+  "sha256": "3faecdb37d78736597bc169e6b878b04563b2255e7e92f1bcc0ad259a9ff8070",
+  "version": "0.7.0",
   "kitVersion": "0.3.0",
   "kitManifestSha256": "46c8f77269dfaee956f8c2a8b7a1f6dd53f756aad7f3a14aabb9b417e939b4eb",
   "protocol": {
     "id": "pet-kart",
-    "version": 3
+    "version": 4
   },
   "esbuild": "0.28.1",
   "three": "0.164.1",

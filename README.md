@@ -11,14 +11,15 @@ A single-file HTML 3D kart racer for the 吐梨邦 desktop pet. Opened inside th
 - 五图都有真实坡面跳台：向前加速通过自动起跳，青色跳台自动开伞；左右转向，刹车快速下降，稳定落地有短加速。空中不蓄漂移、不吃地面加速带。
 - 奶酪环岛：小跳台与滚动奶酪；毛线桥：滑翔、上升风道与横穿毛线球；夜城：高架滑翔、机械路障与侧风。
 - 雪山：局部冰面进一步降低抓地力、固定冰块和滚雪球，可提前绕行或滑翔越过；火山：喷口亮环预警后喷发，冷却时安全通过，热气流帮助滑翔。
-- 机关不会封死整条赛道，电脑遵守同样规则并尝试绕行。环境以房主比赛时间计算，起跳、落地和伞状态同步给客端。新版游戏互动协议 v3，仍使用宿主 SDK v2，不与旧版游戏混局。
+- 机关不会封死整条赛道，电脑遵守同样规则并尝试绕行。环境以房主比赛时间计算，起跳、落地和伞状态同步给客端。新版游戏互动协议 v4，仍使用宿主 SDK v2，不与旧版游戏混局。
 
-Original toy-world terrain: ramps, automatic gliders with steering and brake-to-descend, landing boosts, rolling obstacles, local ice patches, crosswinds and warning/active/cooldown lava vents. Host-clock hazards and airborne states are shared across LAN peers. Game protocol v3; host SDK remains v2.
+Original toy-world terrain: ramps, automatic gliders with steering and brake-to-descend, landing boosts, rolling obstacles, local ice patches, crosswinds and warning/active/cooldown lava vents. Host-clock hazards and airborne states are shared across LAN peers. Drifting also charges a persistent N₂O tank: press N/Ctrl (gamepad L3) or click its gauge when full for a three-second boost. Game protocol v4; host SDK remains v2.
 
 ## 玩法
 
 - 3 圈。单人：你 + 2 个电脑。联机：4 辆车，真人不足 4 位时由房主模拟的电脑车手补满；发车格两排错位。
-- 键位：↑/W 油门 · ↓/S 刹车 · ←→ 转向 · 空格/Shift 漂移 · E/X 道具；支持手柄。
+- 键位：↑/W 油门 · ↓/S 刹车 · ←→ 转向 · 空格/Shift 漂移 · E/X 道具 · N/Ctrl 氮气；手柄按下左摇杆 L3 释放氮气。
+- 有效地面漂移累计 N₂O 能量（约 3.34 秒充满），可以跨多次漂移保留；满格后按 N/Ctrl 或点击仪表，获得 3 秒氮气加速。最多存一管，不自动触发；加速中不能再次积能或延长，受击会中断。
 - 漂移蓄力松开得蓝 / 橙涡轮；倒数到「1」时踩油门是火箭起步；加速带。
 - 道具箱：🍄 加速蘑菇 / 🍌 香蕉皮 / 🧶 追踪毛线球；落后者更容易抽到好道具；已有道具时再吃会重新抽取替换。
 - 赛道（难度由易到难）：
@@ -53,7 +54,7 @@ Original toy-world terrain: ramps, automatic gliders with steering and brake-to-
 3. 比赛进行中加入的朋友先观战，本局结算后顶替一位电脑车手上场；中途离开的人，座位在结算后还给电脑。
 4. 房主关窗或离开，整局结束。
 
-房主权威：房主运行规则（`game/room.cjs`、`game/sim.cjs`），客人只发操作意图；客人本地预测自己的车并向房主结果收敛，其他车按房主比赛时间延迟 150 ms 插值显示，短暂缺包最多外推 100 ms；退出、换赛道、重开和颁奖会清空旧轨迹。星形拓扑：客人之间不直连，房主用 `to` / `from` 区分客人，并把每位车手的形象转发给其他人。使用宿主 `pet.sessions`（HTML 作品专用实验能力，协议 `pet-kart` v3，声明 `players: 4`），每位客人一条会话，分别遵守其限额。
+房主权威：房主运行规则（`game/room.cjs`、`game/sim.cjs`），客人只发操作意图；客人本地预测自己的车并向房主结果收敛，其他车按房主比赛时间延迟 150 ms 插值显示，短暂缺包最多外推 100 ms；退出、换赛道、重开和颁奖会清空旧轨迹。星形拓扑：客人之间不直连，房主用 `to` / `from` 区分客人，并把每位车手的形象转发给其他人。使用宿主 `pet.sessions`（HTML 作品专用实验能力，协议 `pet-kart` v4，声明 `players: 4`），每位客人一条会话，分别遵守其限额。
 
 需要支持多人房间（`players` 3–4）的宿主：吐梨邦测试版 0.26.0-internal.6 起支持，正式版暂不支持。旧宿主只接受 2 人声明，会拒绝整份作品：0.4 在旧宿主上连单人模式也打不开。旧宿主请用 [v0.3.0](https://github.com/ShunyuYao/pet-kart/tree/v0.3.0)（2 人版）。0.3 与 0.4 协议不同，不能混玩。
 

@@ -19,7 +19,7 @@ const SEATS=[0,1,2,3];
 const cpuAsset=p=>CPU_ASSETS[p.signature]||{kind:'toy',species:'mouse',color:p.color};
 
 let driver=null,transport=null,mode='title',view=null,connection='idle',sdk=window.pet||null,petDriver=null;
-let ceremonyFor=-1,lastRaceNo=-1,lastEventSeq=0,pred=null,itemCount=0,errorTimer=null,toastTimer=null,lastFrame=performance.now();
+let ceremonyFor=-1,lastRaceNo=-1,lastEventSeq=0,pred=null,itemCount=0,nitroCount=0,errorTimer=null,toastTimer=null,lastFrame=performance.now();
 const peerAssets=new Map(),keys=new Set(),remoteMotion=RemoteMotion.create();
 
 // ---------- UI helpers ----------
@@ -227,14 +227,15 @@ $('sfx').addEventListener('click',()=>{audio.setSfx(!audio.sfx);$('sfx').setAttr
 $('music').addEventListener('click',()=>{audio.setMusic(!audio.music);$('music').setAttribute('aria-pressed',String(audio.music));$('music').textContent='音乐 '+(audio.music?'开':'关');});
 
 // ---------- input ----------
-const K={up:['ArrowUp','KeyW'],down:['ArrowDown','KeyS'],left:['ArrowLeft','KeyA'],right:['ArrowRight','KeyD'],drift:['Space','ShiftLeft','ShiftRight'],item:['KeyE','KeyX']};
+const K={up:['ArrowUp','KeyW'],down:['ArrowDown','KeyS'],left:['ArrowLeft','KeyA'],right:['ArrowRight','KeyD'],drift:['Space','ShiftLeft','ShiftRight'],item:['KeyE','KeyX'],nitro:['KeyN','ControlLeft','ControlRight']};
 const held=list=>list.some(k=>keys.has(k));
 addEventListener('keydown',e=>{
   if(e.target.closest?.('input,textarea,select'))return;
-  if(mode==='race'&&[...K.up,...K.down,...K.left,...K.right,...K.drift].includes(e.code))e.preventDefault();
+  if(mode==='race'&&[...K.up,...K.down,...K.left,...K.right,...K.drift,...K.nitro].includes(e.code))e.preventDefault();
   if(e.repeat)return;keys.add(e.code);
   if(mode==='ceremony'&&e.code==='Space'){e.preventDefault();world.skipCeremony();return;}
   if(mode==='race'&&K.item.includes(e.code)){e.preventDefault();itemCount++;}
+  if(mode==='race'&&K.nitro.includes(e.code))nitroCount++;
   pushInput();
 });
 addEventListener('keyup',e=>{keys.delete(e.code);pushInput();});
@@ -242,13 +243,14 @@ addEventListener('keyup',e=>{keys.delete(e.code);pushInput();});
 // still correct when the compositor throttles rAF (hidden / occluded window).
 function pushInput(){if(transport&&mode==='race')transport.setInput(readInput());}
 addEventListener('blur',()=>keys.clear());
-let padItem=false;
+$('nitro-button').addEventListener('click',()=>{if(mode==='race'){nitroCount++;pushInput();}});
+let padItem=false,padNitro=false;
 function readInput(){
   let steer=(held(K.right)?1:0)-(held(K.left)?1:0),throttle=held(K.up),brake=held(K.down),drift=held(K.drift);
   const pad=[...(navigator.getGamepads?.()||[])].find(Boolean);
   if(pad){const ax=pad.axes[0]||0;if(Math.abs(ax)>.18)steer=Math.max(-1,Math.min(1,ax));const b=i=>!!pad.buttons[i]?.pressed;throttle||=b(0)||b(7);brake||=b(1)||b(6);drift||=b(5)||b(4);
-    const it=b(2)||b(3);if(it&&!padItem&&mode==='race')itemCount++;padItem=it;}
-  return {steer,throttle:throttle?1:0,brake:brake?1:0,drift:drift?1:0,item:itemCount};
+    const it=b(2)||b(3);if(it&&!padItem&&mode==='race')itemCount++;padItem=it;const ni=b(10);if(ni&&!padNitro&&mode==='race')nitroCount++;padNitro=ni;}else{padItem=false;padNitro=false;}
+  return {steer,throttle:throttle?1:0,brake:brake?1:0,drift:drift?1:0,item:itemCount,nitro:nitroCount};
 }
 
 // ---------- guest prediction ----------
@@ -261,6 +263,8 @@ function reconcile(race){
   if(err>7||(server.spin>0&&pred.spin<=0)){Object.assign(pred,server);return;}
   const a=.18;pred.x+=(sx-pred.x)*a;pred.z+=(sz-pred.z)*a;pred.speed+=(server.speed-pred.speed)*.25;
   let dy=server.yaw-pred.yaw;dy=Math.atan2(Math.sin(dy),Math.cos(dy));pred.yaw+=dy*.2;pred.dist+=(server.dist-pred.dist)*a;
+  // Keep unacknowledged local presses until authority has consumed their counter.
+  if(server.nitroUsed>=pred.nitroUsed)for(const f of ['nitro','nitroTime','nitroUsed','nitroCasts'])pred[f]=server[f];
   if(server.boost>pred.boost+.25)pred.boost=server.boost;
   if(server.air!==pred.air||server.glide!==pred.glide){pred.y=server.y;pred.vy=server.vy;}else{pred.y+=(server.y-pred.y)*.3;pred.vy+=(server.vy-pred.vy)*.3;}
   for(const f of ['air','glide','airTime','launchDist','envTime','terrainCooldown','surface','takeoffs','landings','landingBoosts','terrainHits','item','rolling','lap','finishedAt','place','itemUsed'])pred[f]=server[f];
@@ -276,7 +280,7 @@ function processEvents(race){
     const mine=e.seat===view.you;
     if(e.type==='countdown')continue;
     if(e.type==='go')audio.play('go');
-    if(e.type==='boost'&&mine){audio.play('boost');if(e.kind==='orange')toast('🔥 橙色涡轮！');else if(e.kind==='rocket')toast('🚀 完美起步！');}
+    if(e.type==='boost'&&mine){audio.play('boost');if(e.kind==='nitro')toast('💨 N₂O 氮气加速！');else if(e.kind==='orange')toast('🔥 橙色涡轮！');else if(e.kind==='rocket')toast('🚀 完美起步！');}
     if(e.type==='box'&&mine)audio.play('box');
     if(e.type==='hit')audio.play('hit');
     if(e.type==='drop'&&mine)audio.play('drop');
@@ -301,6 +305,12 @@ function hud(race,me){
   $('item-icon').textContent=rolling?['🍄','🍌','🧶'][Math.floor(performance.now()/90)%3]:ITEM_ICON[me.item]||'';
   $('item-name').textContent=rolling?'抽取中…':me.item?ITEM_NAME[me.item]+' · E 使用':'道具箱';
   $('charge').style.width=Math.min(100,(me.charge||0)/1.9*100)+'%';$('charge').dataset.level=me.charge>=1.9?'2':me.charge>=.9?'1':'0';$('drift-meter').hidden=!me.drift;
+  const active=me.nitroTime>0,ready=me.nitro>=100,level=active?me.nitroTime/3*100:me.nitro||0;
+  $('nitro-button').dataset.state=active?'active':ready?'ready':'charging';
+  $('nitro-button').disabled=!ready||active||race.phase!=='racing'||!!me.finishedAt||me.spin>0;
+  $('nitro-state').textContent=active?'加速中 · '+me.nitroTime.toFixed(1)+'s':ready?'已就绪 · 按 N 释放':'漂移积能 · '+Math.floor(me.nitro||0)+'%';
+  $('nitro-fill').style.width=level+'%';$('nitro-meter').setAttribute('aria-valuenow',String(Math.round(level)));
+  $('nitro-meter').setAttribute('aria-label',active?'氮气剩余时间':'氮气能量');
   $('wrong-way').hidden=true;
   const lost=view.players.find(p=>!p.ai&&p.seat!==view.you&&!p.connected);
   $('banner').hidden=!(transport?.role()!=='solo'&&(connection!=='connected'||lost));
@@ -338,7 +348,7 @@ function frame(now){
   window.__rafCount=(window.__rafCount||0)+1;
   const dt=Math.min(.05,(now-lastFrame)/1000);lastFrame=now;
   const input=readInput();
-  if(transport&&mode==='race')transport.setInput(input);else if(transport)transport.setInput({steer:0,throttle:input.throttle,brake:0,drift:0,item:itemCount});
+  if(transport&&mode==='race')transport.setInput(input);else if(transport)transport.setInput({steer:0,throttle:input.throttle,brake:0,drift:0,item:itemCount,nitro:nitroCount});
   const role=transport?.role();
   if(role==='host'||role==='solo'){const v=transport.peek();if(v){view=v;if(v.race&&v.raceNo!==lastRaceNo){lastRaceNo=v.raceNo;lastEventSeq=0;}}}
   const race=view?.race,states={};
@@ -353,7 +363,7 @@ function frame(now){
     if(race.phase!=='results'&&world.ceremonyActive){world.stopCeremony();ceremonyFor=-1;}
     const newMode=race.phase==='results'?(world.ceremonyActive&&!world.ceremonyDone?'ceremony':'results'):race.phase==='grid'?'lobby':'race';if(newMode!==mode)renderMenus();
     hud(race,states[view.you]);
-    const me=states[view.you];if(me&&mode==='race')audio.engine(me.speed,input.throttle,me.boost>0);else audio.silence();
+    const me=states[view.you];if(me&&mode==='race')audio.engine(me.speed,input.throttle,me.boost>0||me.nitroTime>0);else audio.silence();
   }
   world.update({race,states,you:view?.you??0,dt,phase:race?.phase});
   requestAnimationFrame(frame);

@@ -197,8 +197,14 @@ const {connect}=require('./cdp.cjs');
 async function autopilot(app,held){
   // Real key presses only, over one persistent CDP session: read our kart, steer like a player.
   app.cdpS??=await connect(app.game);
-  const s=await app.cdpS.evaluate('(()=>{const s=window.__kart.state,r=s.view?.race;if(!r)return null;const me=s.pred||r.karts.find(x=>x.seat===s.view.you);return {phase:r.phase,trackId:r.trackId,x:me.x,z:me.z,yaw:me.yaw,dist:me.dist,speed:me.speed,item:me.item,rolling:me.rolling,air:me.air,glide:me.glide,y:me.y,landings:me.landings,authority:r.karts.find(x=>x.seat===s.view.you),rendered:window.__kart.world().drivers};})()');
+  const s=await app.cdpS.evaluate('(()=>{const s=window.__kart.state,r=s.view?.race;if(!r)return null;const me=s.pred||r.karts.find(x=>x.seat===s.view.you);return {phase:r.phase,trackId:r.trackId,x:me.x,z:me.z,yaw:me.yaw,dist:me.dist,speed:me.speed,item:me.item,rolling:me.rolling,air:me.air,glide:me.glide,y:me.y,landings:me.landings,lat:me.lat,nitro:me.nitro,nitroTime:me.nitroTime,nitroCasts:me.nitroCasts,authority:r.karts.find(x=>x.seat===s.view.you),rendered:window.__kart.world().drivers};})()');
   if(!s||s.phase!=='racing')return s;
+  if(held.nitroMode){
+    const want=require('./nitro-scenario.cjs').driving(s,T.build(s.trackId));
+    for(const code of ['ArrowLeft','ArrowRight','Space']){const down=want.includes(code);if(!!held[code]!==down){await app.cdpS.key(code,down?'keyDown':'keyUp');held[code]=down;}}
+    if(s.nitro===100&&!s.nitroTime)await app.cdpS.press('KeyN');
+    return s;
+  }
   const t=T.build(s.trackId),p=T.at(t,s.dist+9+Math.max(0,s.speed)*.35,0);
   let diff=Math.atan2(p.x-s.x,p.z-s.z)-s.yaw;diff=Math.atan2(Math.sin(diff),Math.cos(diff));
   const want=diff>.1?'ArrowLeft':diff<-.1?'ArrowRight':null;
@@ -270,16 +276,18 @@ async function kartPlay(a,b,c){
   await applyMain(a,'rat-doll-female');
   await wait(async()=>(await state(b)).view.players[0].name!==names[0]&&(await state(c)).view.players[0].name!==names[0],'host pet change reaches both guests',30000);
   check('host changes desktop pet mid-race; both guests see the new driver');
-  const held={a:{},b:{},c:{}},flight={a:{},b:{},c:{}};let usedItem=false;
+  const held={a:{nitroMode:true},b:{nitroMode:true},c:{nitroMode:true}},flight={a:{},b:{},c:{}};let usedItem=false;
   await wait(async()=>{
     const p={};for(const app of all)p[app.label]=await autopilot(app,held[app.label]);
-    for(const app of all){const q=p[app.label],f=flight[app.label];if(q?.air&&q.glide&&q.authority?.air&&Math.abs(q.y-q.authority.y)<6)f.predictedFlight=true;if(q?.landings>0)f.landed=true;if(q?.rendered?.some(d=>d.seat!=='abc'.indexOf(app.label)&&d.glider))f.remoteCanopy=true;}
+    for(const app of all){const q=p[app.label],f=flight[app.label];if(q?.air&&q.glide&&q.authority?.air&&Math.abs(q.y-q.authority.y)<6)f.predictedFlight=true;if(q?.landings>0)f.landed=true;if(q?.authority?.nitroCasts>0&&q.nitroTime>0&&q.authority.nitroTime>0)f.nitro=true;if(q?.rendered?.some(d=>d.seat!=='abc'.indexOf(app.label)&&d.nitroFlame))f.remoteNitro=true;if(q?.rendered?.some(d=>d.seat!=='abc'.indexOf(app.label)&&d.glider))f.remoteCanopy=true;}
     if(!usedItem&&p.c?.item&&!p.c.rolling){await c.cdpS.press('KeyE');usedItem=p.c.item;}
     return all.every(app=>p[app.label]?.phase==='results');
   },'race to results with real keys',300000);
   for(const app of all){assert(flight[app.label].predictedFlight&&flight[app.label].landed&&flight[app.label].remoteCanopy,'LAN flight, landing and remote canopy '+app.label+' '+JSON.stringify(flight));}
+  for(const app of all)assert(flight[app.label].nitro&&flight[app.label].remoteNitro,'LAN manual nitro and remote cyan flame '+app.label+' '+JSON.stringify(flight));
+  check('three real keyboards earn and release nitro, authority and remote exhaust agree',flight);
   check('three real hosts synchronize flight, landing, guest height prediction and remote canopy',flight);
-  for(const app of all){for(const key of ['ArrowUp','ArrowLeft','ArrowRight'])await k(app.game,key,'keyUp');app.cdpS?.close();}
+  for(const app of all){for(const key of ['ArrowUp','ArrowLeft','ArrowRight','Space'])await k(app.game,key,'keyUp');app.cdpS?.close();}
   if(usedItem)check('second guest used an item over LAN',{item:usedItem});
   const cers=[];for(const app of all)cers.push(await wait(async()=>{const x=(await world(app)).ceremony;return x.active&&x.ready&&x.t>4600?x:null;},'ceremony '+app.label,20000));
   const order=x=>x.actors.slice().sort((p,q)=>p.place-q.place).map(p=>p.seat);

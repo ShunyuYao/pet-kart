@@ -84,11 +84,11 @@ async function wait(p,expr,label,ms=20000){const until=Date.now()+ms;let last;wh
     for(const a of c0.actors)assert.equal(a.place,places.find(x=>x.seat===a.seat).place,'podium order matches race result');
     check(c0.actors.find(a=>a.seat===0).kind==='doll3d'&&c0.actors.filter(a=>a.seat!==0).every(a=>a.kind==='toy'),'own 3D doll and computer toys stand on the podium');
     await wait(p,'window.__kart.world().ceremony.t>1300','third place landed',6000);await shot('06a-ceremony-third');
-    const mid=await wait(p,'(()=>{const c=window.__kart.world().ceremony;return c.t>4600?c:null;})()','champion landed',9000);await shot('06b-ceremony-champion');
+    const mid=await wait(p,'(()=>{const c=window.__kart.world().ceremony;return c.t>4600?{...c,resultsHidden:document.querySelector("#results-panel").hidden}:null;})()','champion landed',9000);await shot('06b-ceremony-champion');
     const y=n=>mid.actors.find(a=>a.place===n).y;
     check(mid.actors.every(a=>a.visible)&&y(1)>y(2)&&y(2)>y(3),'landed: champion highest, then 2nd, then 3rd',mid.actors);
     check(mid.trophy&&mid.confetti>0&&mid.fireworks>0,'trophy over the champion, live confetti and fireworks',{confetti:mid.confetti,fireworks:mid.fireworks});
-    check(await p.evaluate('document.querySelector("#results-panel").hidden'),'results still hidden mid-ceremony');
+    check(mid.t<8200&&mid.resultsHidden,'results still hidden mid-ceremony',{time:mid.t});
     await wait(p,'window.__kart.world().ceremony.t>6300','orbit',6000);await shot('06c-ceremony-orbit');
     // 3) Results appear on their own after the show, with no input.
     await wait(p,'window.__kart.state.mode==="results"&&!document.querySelector("#results-panel").hidden','results after ceremony',8000);
@@ -136,5 +136,5 @@ async function wait(p,expr,label,ms=20000){const until=Date.now()+ms;let last;wh
     check(report.errors.length===0,'no uncaught page exceptions',report.errors);
     report.ok=true;
   }catch(e){report.ok=false;report.failure=e.stack;console.error(e.stack);if(p)await shot('failure').catch(()=>{});process.exitCode=1;}
-  finally{fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2));try{process.kill(-child.pid,'SIGKILL');}catch{}fs.rmSync(profile,{recursive:true,force:true});p?.close();}
+  finally{p?.close();try{process.kill(-child.pid,'SIGTERM');}catch{}for(let i=0;i<30&&child.exitCode===null;i++)await sleep(100);if(child.exitCode===null)try{process.kill(-child.pid,'SIGKILL');}catch{}await sleep(200);let alive=true;try{process.kill(child.pid,0);}catch{alive=false;}report.ownedProcessExited=!alive;if(alive){report.ok=false;process.exitCode=1;}else fs.rmSync(profile,{recursive:true,force:true});fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2));}
 })().then(()=>process.exit(process.exitCode||0));

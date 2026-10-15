@@ -93,3 +93,44 @@ test('three-kart race: distinct grid slots, 1/2/3 places, results reached',()=>{
   assert(!S.validSnapshot({...snap,karts:[...snap.karts,{...snap.karts[0],seat:4}]}),'seats are 0-3 only');
   assert(!S.validSnapshot({...snap,karts:[...snap.karts,{...snap.karts[0],seat:3},{...snap.karts[0],seat:3}]}),'at most 4 karts');
 });
+
+// Nitro: cumulative drift reward, manual edge-triggered spending and authority safety.
+test('nitro accumulates across valid drifts, excludes invalid surfaces and survives release',()=>{
+  const N=require('../game/nitro.cjs'),k=S.create({seats:[0]}).karts[0];
+  Object.assign(k,{speed:25,drift:1,steer:.6});
+  N.charge(k,.5,10);assert.equal(k.nitro,15);
+  k.drift=0;N.charge(k,1,10);assert.equal(k.nitro,15);
+  for(const field of ['air','off','wall','spin','nitroTime']){k.drift=1;k[field]=1;N.charge(k,1,10);assert.equal(k.nitro,15,field);k[field]=0;}
+  k.speed=0;N.charge(k,1,10);assert.equal(k.nitro,15);
+  k.speed=25;N.charge(k,1,0);assert.equal(k.nitro,15,'no forward progress');
+  for(let i=0;i<10;i++)N.charge(k,.5,10);assert.equal(k.nitro,100);
+});
+test('nitro consumes a request once, never queues early presses and has a separate timer',()=>{
+  const N=require('../game/nitro.cjs'),k=S.create({seats:[0]}).karts[0];
+  N.begin(k,{nitro:1},.01,true);k.nitro=100;
+  N.begin(k,{nitro:1},.01,true);assert.equal(k.nitroTime,0,'early request not queued');
+  k.boost=.7;k.boostKind='blue';N.begin(k,{nitro:2},.01,true);
+  assert.equal(k.nitroTime,3);assert.equal(k.nitro,0);assert.equal(k.boost,.7);assert.equal(k.nitroCasts,1);
+  N.begin(k,{nitro:2},.5,true);assert.equal(k.nitroTime,2.5);
+  N.begin(k,{nitro:1},.5,true);assert.equal(k.nitroUsed,2);assert.equal(k.nitroCasts,1);
+  k.nitro=100;N.begin(k,{nitro:3},.5,true);assert.equal(k.nitroTime,1.5,'cannot extend active tank');assert.equal(k.nitro,100);
+  k.spin=1;N.begin(k,{nitro:4},.01,true);assert.equal(k.nitroTime,0);assert.equal(k.nitro,100);
+  k.spin=0;N.begin(k,{nitro:5},.01,false);assert.equal(k.nitroTime,0,'not outside racing');
+  k.finishedAt=10;N.begin(k,{nitro:6},.01,true);assert.equal(k.nitroTime,0);
+});
+test('nitro input and snapshots are bounded, and new races start empty',()=>{
+  const a=S.normalizeInput({nitro:8});assert.equal(a.nitro,8);
+  for(const nitro of [3,-1,NaN,Infinity,2**54,'9'])assert.equal(S.normalizeInput({nitro},a).nitro,8);
+  const s=S.create({seats:[0]}),k=s.karts[0];assert.equal(k.nitro,0);assert.equal(k.nitroTime,0);
+  k.nitro=100;const snap=S.snapshot(s);assert.equal(snap.karts[0].nitro,100);assert(S.validSnapshot(snap));
+  for(const [field,value] of [['nitro',101],['nitroTime',Infinity],['nitroUsed',-1],['nitroCasts',.5]]){const bad=structuredClone(snap);bad.karts[0][field]=value;assert(!S.validSnapshot(bad),field);}
+});
+test('nitro raises speed above mini turbo and emits one authoritative activation',()=>{
+  const s=S.create({trackId:'yarn',seats:[0]});s.phase='racing';const k=s.karts[0];k.nitro=100;
+  run(s,1100,{0:()=>({throttle:1,nitro:1})});assert(k.speed>42,'speed '+k.speed);
+  assert.equal(s.events.filter(e=>e.kind==='nitro').length,1);
+  assert.equal(S.snapshot(s).karts[0].nitroCasts,1);
+  // An armed banana cancels the active boost, but preserves an unspent tank.
+  k.nitro=35;s.hazards.push({id:99,kind:'banana',x:k.x,y:k.y,z:k.z,armedAt:0,owner:1});S.step(s,1);
+  assert.equal(k.nitroTime,0);assert.equal(k.nitro,35);
+});

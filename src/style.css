@@ -109,3 +109,16 @@ details.import summary{cursor:pointer;font-size:13px;font-weight:700;color:#4b3f
 .ceremony-bar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);display:flex;align-items:center;gap:14px;padding:8px 10px 8px 18px;border-radius:999px;background:rgba(29,27,46,.72);color:#fff;font-weight:800;z-index:6;box-shadow:0 10px 30px rgba(0,0,0,.25)}
 .ceremony-bar .pill{background:#fff}
 .place[data-place="3"]{color:#f0b07a}
+
+/* Persistent toy-dashboard gauge, separate from the short drift spark meter. */
+.nitro-panel{position:absolute;left:18px;bottom:112px;width:196px;padding:10px 12px;border:2px solid rgba(185,239,255,.7);border-radius:16px;background:rgba(20,42,66,.88);color:#fff;pointer-events:auto;text-align:left;text-shadow:none;box-shadow:none}
+.nitro-panel:disabled{opacity:1;cursor:default}
+.nitro-title{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px}
+.nitro-title b{font-size:24px;font-style:italic;color:#91ebff;line-height:1.1}
+.nitro-track{display:block;height:10px;margin:8px 0 6px;background:#152839;border-radius:8px;overflow:hidden}
+#nitro-fill{display:block;height:100%;width:0;background:linear-gradient(90deg,#3b9dff,#7af3ff);border-radius:inherit}
+.nitro-help{font-size:10px;color:#c4dfec}
+.nitro-panel[data-state="ready"]{border-color:#a8ffd8;background:#184a4e}
+.nitro-panel[data-state="ready"] #nitro-fill{background:#9bffce}
+.nitro-panel[data-state="active"]{border-color:#9bf6ff;background:#164e75}
+.nitro-panel:focus-visible{outline:3px solid white;outline-offset:3px}

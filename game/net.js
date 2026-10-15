@@ -1,5 +1,5 @@
 // LAN session adapter over the host's `pet.sessions` bridge (HTML work, experimental).
-// Room of up to 4 (protocol v3): the host is seat 0 and runs the authoritative room;
+// Room of up to 4 (protocol v4): the host is seat 0 and runs the authoritative room;
 // each guest (seats 1-3, in arrival order) sends intents only and talks to the host.
 // The host addresses a guest with `to` and learns the sender from `from`; it relays
 // every driver's avatar to the other guests (star topology, guests never connect).
@@ -11,7 +11,7 @@
   const CPUS=[{name:'电脑 · 奶酪队长',signature:'builtin:cpu-cheddar',kind:'toy',color:'#6c7cff'},
     {name:'电脑 · 棉花教练',signature:'builtin:cpu-cotton',kind:'toy',color:'#22c55e'},
     {name:'电脑 · 布丁车手',signature:'builtin:cpu-pudding',kind:'toy',color:'#f59e0b'}];
-  const PROTOCOL={id:'pet-kart',version:3},PURPOSE='kart.profile.v1',SEND_MS=50,SIM_MS=1000/60,STALE_MS=3000,GUEST_SEATS=[1,2,3];
+  const PROTOCOL={id:'pet-kart',version:4},PURPOSE='kart.profile.v1',SEND_MS=50,SIM_MS=1000/60,STALE_MS=3000,GUEST_SEATS=[1,2,3];
   const pause=ms=>new Promise(r=>setTimeout(r,ms));
   const encode=value=>{const b=new TextEncoder().encode(JSON.stringify(value));let s='';for(let i=0;i<b.length;i+=8192)s+=String.fromCharCode(...b.subarray(i,i+8192));return btoa(s);};
   const decode=value=>{if(typeof value!=='string'||value.length>1400000)throw Error('invalid_profile');return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(value),c=>c.charCodeAt(0))));};
@@ -19,7 +19,7 @@
   function create(sdk,{onView=()=>{},onConnection=()=>{},onError=()=>{},onAsset=()=>{},now=()=>Date.now()}={}){
     let context=null,host=false,room=null,connection='waiting',closed=false,disposed=false,cursor=0,epoch=0;
     let profile=null,asset=null,lastHello=0,serial=0,applied=0,mySeat=null;
-    let input={steer:0,throttle:0,brake:0,drift:0,item:0},readySeq=0,readyWant=false,sending=false;
+    let input={steer:0,throttle:0,brake:0,drift:0,item:0,nitro:0},readySeq=0,readyWant=false,sending=false;
     // host: sessionPeerId -> guest seat state; payloads: signature -> encoded avatar (for relay)
     const peers=new Map(),payloads=new Map();
     // guest: single upload channel to the host
@@ -195,7 +195,7 @@
       // Host renders its own authoritative room every frame (views go out at 20 Hz).
       peek:()=>room?room.view(0):null,
       setProfile(p,a){profile=R.validateProfile(p);asset=a||null;sentSignature='';lastHello=0;if(room)room.join(0,profile);},
-      setInput(v){input={steer:+v.steer||0,throttle:v.throttle?1:0,brake:v.brake?1:0,drift:v.drift?1:0,item:v.item|0};if(room)room.input(0,input);},
+      setInput(v){input={steer:+v.steer||0,throttle:v.throttle?1:0,brake:v.brake?1:0,drift:v.drift?1:0,item:v.item|0,nitro:Number.isSafeInteger(v.nitro)&&v.nitro>=0?Math.max(input.nitro,v.nitro):input.nitro};if(room)room.input(0,input);},
       ready(value){if(closed)throw Error('session_closed');if(room)room.ready(0,value);else{readySeq++;readyWant=!!value;lastHello=0;}},
       setTrack(id){if(!room)throw Error('host_only');room.setTrack(id);},
       async leave(){try{await sdk.leave();}finally{end('peer_left');}},

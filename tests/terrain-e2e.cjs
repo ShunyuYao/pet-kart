@@ -4,7 +4,7 @@
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict'),{spawn}=require('node:child_process');
 const {connect}=require('./cdp.cjs'),T=require('../game/track.cjs'),E=require('../game/terrain.cjs');
 const ROOT=path.resolve(__dirname,'..'),HOST=process.env.KART_HOST_ROOT||path.resolve(ROOT,'../..');
-const out=path.join(ROOT,'artifacts/terrain-e2e',new Date().toISOString().replace(/[:.]/g,'-'));fs.mkdirSync(out,{recursive:true});
+const out=path.join(ROOT,process.argv.includes('--nitro')?'artifacts/nitro-e2e':'artifacts/terrain-e2e',new Date().toISOString().replace(/[:.]/g,'-'));fs.mkdirSync(out,{recursive:true});
 const report={checks:[],errors:[],screenshots:[],scope:'Unmodified game HTML, hidden Electron, isolated profile, CDP real keyboard; not native focus or physical networking.'};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms)),check=(label,value=true)=>{assert(value,label);report.checks.push(label);console.log('PASS',label);};
 (async()=>{
@@ -17,7 +17,8 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms)),check=(label,value=true)=>{asse
  try{
   let target;for(let i=0;i<100&&!target;i++){try{target=(await(await fetch('http://127.0.0.1:'+port+'/json')).json()).find(t=>t.type==='page');}catch{}await sleep(100);}assert(target,'Electron started');p=await connect(target);await p.send('Runtime.enable');p.on(m=>{if(m.method==='Runtime.exceptionThrown')report.errors.push(m.params.exceptionDetails);});
   await wait('window.__kart?.state.driver','boot');
-  for(const id of T.ids){
+  if(process.argv.includes('--nitro'))await require('./nitro-scenario.cjs').run({p,keys,wait,shot,check,report});
+  else for(const id of T.ids){
    await p.activate('#solo');await wait('window.__kart.state.mode==="lobby"','lobby');await p.activate('[data-track="'+id+'"]');await wait('window.__kart.state.view.trackId==="'+id+'"','track');await p.activate('#ready');
    await wait('window.__kart.state.view.race?.phase==="countdown"','countdown');await shot(id+'-approach');
    await keys(['ArrowUp']);await wait('window.__kart.state.view.race.phase==="racing"','go');

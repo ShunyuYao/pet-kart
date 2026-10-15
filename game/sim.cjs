@@ -1,7 +1,7 @@
 // Authoritative race simulation. Pure data in, pure data out: no DOM, no Three.js.
 // The host (or the solo driver) owns one race; guests only send intents and
 // predict their own kart with `stepKart`, then converge to host snapshots.
-(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory(require('./track.cjs'),require('./terrain.cjs'));else root.KartSim=factory(root.KartTrack,root.KartTerrain);})(globalThis,function(T,E){
+(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory(require('./track.cjs'),require('./terrain.cjs'),require('./nitro.cjs'));else root.KartSim=factory(root.KartTrack,root.KartTerrain,root.KartNitro);})(globalThis,function(T,E,N){
   'use strict';
   const K={max:30,accel:22,brake:40,reverse:9,coast:5,offMax:15,turn:2.05,driftTurn:1.25,driftExtra:.85,
     boostMax:40,boostAccel:48,spin:1.15,radius:1.25,itemRadius:2.3,hazardRadius:1.6,yarnSpeed:46,yarnLife:4.5,
@@ -14,13 +14,14 @@
   const clamp=(v,a,b)=>v<a?a:v>b?b:v;
   function rng(state){let t=(state.seed=(state.seed+0x6D2B79F5)|0);t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296;}
   function hashSeed(text){let h=2166136261;for(const c of String(text))h=Math.imul(h^c.charCodeAt(0),16777619);return h|0;}
-  const NEUTRAL=Object.freeze({steer:0,throttle:0,brake:0,drift:0,item:0});
+  const NEUTRAL=Object.freeze({steer:0,throttle:0,brake:0,drift:0,item:0,nitro:0});
   function normalizeInput(v,prev){
     // Intents only. Counters are monotonic so a replayed or reordered packet cannot
     // fire an item twice; everything else is clamped to the legal range.
     if(!v||typeof v!=='object')return prev||{...NEUTRAL};
     const n=x=>Number.isFinite(x)?x:0;
     return {steer:clamp(Math.round(n(v.steer)*100)/100,-1,1),throttle:n(v.throttle)>0?1:0,brake:n(v.brake)>0?1:0,drift:n(v.drift)>0?1:0,
+      nitro:Number.isSafeInteger(v.nitro)&&v.nitro>=0?Math.max(v.nitro,prev?.nitro||0):(prev?.nitro||0),
       item:Number.isSafeInteger(v.item)&&v.item>=0?Math.max(v.item,prev?.item||0):(prev?.item||0)};
   }
   function makeKart(track,seat,slot,count){
@@ -31,7 +32,7 @@
     const p=T.at(track,track.N-back,lane);
     return {seat,x:p.x,y:p.y,z:p.z,yaw:p.yaw,speed:0,slide:0,steer:0,idx:T.wrap(Math.round(track.N-back),track.N),lat:lane,
       air:0,glide:0,vy:0,airTime:0,launchDist:-1e6,envTime:0,terrainCooldown:0,takeoffs:0,landings:0,landingBoosts:0,terrainHits:0,dist:-back,lap:0,item:null,rollUntil:0,itemUsed:0,boost:0,boostKind:'',spin:0,drift:0,driftDir:0,charge:0,
-      wall:0,off:0,finishedAt:0,place:0,rocket:0,throttleAt:-1};
+      nitro:0,nitroTime:0,nitroUsed:0,nitroCasts:0,wall:0,off:0,finishedAt:0,place:0,rocket:0,throttleAt:-1};
   }
   function create({trackId='cheese',laps=LAPS,seed=1,seats=[0,1]}={}){
     const track=T.build(trackId);
@@ -50,19 +51,20 @@
     const terrain=E.surface(track,k.dist,k.lat,!!k.air);k.surface=terrain.kind;
     const inp=racing&&!k.finishedAt?input:NEUTRAL;
     if(k.spin>0){k.spin=Math.max(0,k.spin-dt);k.speed*=Math.pow(.2,dt);k.drift=0;k.charge=0;}
-    const control=k.spin<=0;
+    N.begin(k,input,dt,racing);
+    const control=k.spin<=0,boosting=k.boost>dt||k.nitroTime>0;
     k.boost=Math.max(0,k.boost-dt);
     // Grade under the kart, positive when the nose points uphill.
     const fwd=Math.sign(Math.cos(k.yaw-Math.atan2(track.tx[k.idx|0]||0,track.tz[k.idx|0]||1))||1),grade=(k.air?0:1)*fwd*(T.sampleY(track,k.dist+2)-T.sampleY(track,k.dist-2))/4;
-    let max=k.boost>0?K.boostMax:K.max;if(k.off&&!k.boost)max=track.offMax;
+    let max=k.nitroTime>0?N.K.max:k.boost>0?K.boostMax:K.max;if(k.off&&!boosting)max=track.offMax;
     max+=clamp(-grade*K.slopeMax,K.slopeCap[0],K.slopeCap[1]);
     // Steering responds quickly but not instantly, which also smooths network input.
     k.steer+=(clamp(inp.steer,-1,1)-k.steer)*Math.min(1,dt*12);
     if(control){
-      if(inp.throttle&&!inp.brake)k.speed+=(k.boost>0?K.boostAccel:K.accel)*dt*(k.speed<max?1:0);
+      if(inp.throttle&&!inp.brake)k.speed+=(boosting?K.boostAccel:K.accel)*dt*(k.speed<max?1:0);
       else if(inp.brake){k.speed-=(k.speed>0?K.brake:K.accel*.6)*dt;k.speed=Math.max(k.speed,-K.reverse);}
       else k.speed-=Math.sign(k.speed)*Math.min(Math.abs(k.speed),K.coast*dt);
-      if(k.boost>0&&k.speed<max)k.speed=Math.min(max,k.speed+K.boostAccel*dt);
+      if(boosting&&k.speed<max)k.speed=Math.min(max,k.speed+K.boostAccel*dt);
     }
     if(k.spin<=0&&k.speed>0)k.speed-=grade*K.slope*dt;
     if(k.speed>max)k.speed=Math.max(max,k.speed-(k.off?40:18)*dt);
@@ -101,6 +103,7 @@
       // Scrape along the fence: nudge the nose back toward the road direction.
       let diff=p.yaw-k.yaw;diff=Math.atan2(Math.sin(diff),Math.cos(diff));if(Math.abs(diff)<Math.PI/2&&k.speed>0)k.yaw+=diff*Math.min(1,dt*4);k.speed*=Math.pow(.25,dt);k.slide*=.5;k.wall=1;
     }
+    if(racing)N.charge(k,dt,k.dist-previousDist);
     return k;
   }
   function place(state){
@@ -114,7 +117,7 @@
     if(lead&&gap>40)return r<.55?'banana':r<.85?'yarn':'mushroom';
     return ITEMS[Math.floor(r*3)];
   }
-  function hit(state,k,cause){if(k.spin>0||k.finishedAt)return;k.spin=K.spin;k.speed*=.35;k.boost=0;k.drift=0;k.charge=0;event(state,'hit',k.seat,{cause});}
+  function hit(state,k,cause){if(k.spin>0||k.finishedAt)return;k.spin=K.spin;k.speed*=.35;k.boost=0;k.nitroTime=0;k.drift=0;k.charge=0;event(state,'hit',k.seat,{cause});}
   function useItem(state,k){
     const track=T.build(state.trackId),item=k.item;if(!item)return;k.item=null;
     if(item==='mushroom'){k.boost=Math.max(k.boost,K.mushroom);k.boostKind='mushroom';event(state,'boost',k.seat,{kind:'mushroom'});}
@@ -136,11 +139,12 @@
     }
     state.t+=dtMs;
     for(const k of state.karts){
-      const inp=state.inputs[k.seat],mini=k.miniFired||0;
+      const inp=state.inputs[k.seat],mini=k.miniFired||0,nitro=k.nitroCasts;
       const takeoffs=k.takeoffs,landings=k.landings;
       stepKart(k,inp,dt,track,state.phase==='racing',state.t);
       if(k.takeoffs!==takeoffs)event(state,'launch',k.seat,{glide:k.glide});
       if(k.landings!==landings)event(state,'land',k.seat,{boost:k.boostKind==='landing'&&k.boost>0});
+      if(k.nitroCasts!==nitro)event(state,'boost',k.seat,{kind:'nitro'});
       E.affect(state,k,dt,hit);
       if((k.miniFired||0)!==mini)event(state,'boost',k.seat,{kind:k.boostKind});
       if(!k.finishedAt){
@@ -190,7 +194,7 @@
   function snapshot(state){
     return {v:1,trackId:state.trackId,laps:state.laps,phase:state.phase,t:Math.round(state.t),countdown:Math.round(state.countdown),finishAt:state.finishAt,
       karts:state.karts.map(k=>({seat:k.seat,x:r2(k.x),y:r2(k.y),z:r2(k.z),yaw:r3(k.yaw),speed:r2(k.speed),slide:r2(k.slide),steer:r2(k.steer),idx:k.idx,lat:r2(k.lat),dist:r2(k.dist),lap:k.lap,
-        air:k.air||0,glide:k.glide||0,vy:r2(k.vy||0),airTime:r3(k.airTime||0),launchDist:r2(k.launchDist??-1e6),envTime:Math.round(k.envTime||0),terrainCooldown:r2(k.terrainCooldown||0),surface:k.surface||'road',takeoffs:k.takeoffs||0,landings:k.landings||0,landingBoosts:k.landingBoosts||0,terrainHits:k.terrainHits||0,item:k.item,rolling:k.item&&state.t<k.rollUntil?1:0,boost:r2(k.boost),boostKind:k.boostKind,spin:r2(k.spin),drift:k.drift,driftDir:k.driftDir,charge:r2(k.charge),off:k.off,finishedAt:k.finishedAt,place:k.place,itemUsed:k.itemUsed})),
+        air:k.air||0,glide:k.glide||0,vy:r2(k.vy||0),airTime:r3(k.airTime||0),launchDist:r2(k.launchDist??-1e6),envTime:Math.round(k.envTime||0),terrainCooldown:r2(k.terrainCooldown||0),surface:k.surface||'road',takeoffs:k.takeoffs||0,landings:k.landings||0,landingBoosts:k.landingBoosts||0,terrainHits:k.terrainHits||0,item:k.item,rolling:k.item&&state.t<k.rollUntil?1:0,boost:r2(k.boost),boostKind:k.boostKind,spin:r2(k.spin),drift:k.drift,driftDir:k.driftDir,charge:r2(k.charge),off:k.off,finishedAt:k.finishedAt,place:k.place,itemUsed:k.itemUsed,nitro:Math.floor(k.nitro*100)/100,nitroTime:r2(k.nitroTime),nitroUsed:k.nitroUsed,nitroCasts:k.nitroCasts})),
       boxes:state.boxes.map(b=>b.until>state.t?0:1),hazards:state.hazards.map(h=>({id:h.id,kind:h.kind,x:r2(h.x),y:r2(h.y),z:r2(h.z)})),
       projectiles:state.projectiles.map(p=>({id:p.id,kind:p.kind,x:r2(p.x),y:r2(p.y),z:r2(p.z)})),events:state.events.slice(-12)};
   }
@@ -199,7 +203,7 @@
   function validSnapshot(s){
     const num=Number.isFinite;
     return !!s&&s.v===1&&T.ids.includes(s.trackId)&&PHASES.includes(s.phase)&&num(s.t)&&num(s.countdown)&&Array.isArray(s.karts)&&s.karts.length<=4&&
-      s.karts.every(k=>[0,1,2,3].includes(k.seat)&&['x','y','z','yaw','speed','dist'].every(f=>num(k[f]))&&['air','glide','vy','airTime','launchDist','envTime'].every(f=>k[f]===undefined||num(k[f]))&&(k.item===null||ITEMS.includes(k.item)))&&
+      s.karts.every(k=>N.valid(k)&&[0,1,2,3].includes(k.seat)&&['x','y','z','yaw','speed','dist'].every(f=>num(k[f]))&&['air','glide','vy','airTime','launchDist','envTime'].every(f=>k[f]===undefined||num(k[f]))&&(k.item===null||ITEMS.includes(k.item)))&&
       Array.isArray(s.boxes)&&s.boxes.length<=64&&Array.isArray(s.hazards)&&s.hazards.length<=16&&Array.isArray(s.projectiles)&&s.projectiles.length<=16&&Array.isArray(s.events)&&s.events.length<=24;
   }
   return {K,LAPS,ITEMS,COUNTDOWN,create,start,step,stepKart,setInput,normalizeInput,snapshot,validSnapshot,place,NEUTRAL};

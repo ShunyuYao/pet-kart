@@ -6,8 +6,8 @@ async function connect(target){
   ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.id&&pending.has(m.id)){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(Error(m.error.message+' '+(m.error.data||''))):p.resolve(m.result);}else if(m.method)listeners.forEach(l=>l(m));};
   const send=(method,params={},timeout=30000)=>new Promise((resolve,reject)=>{const n=++id;pending.set(n,{resolve,reject});ws.send(JSON.stringify({id:n,method,params}));setTimeout(()=>{if(pending.delete(n))reject(Error('cdp timeout '+method));},timeout);});
   const evaluate=async(expr,timeout)=>{const r=await send('Runtime.evaluate',{expression:expr,awaitPromise:true,returnByValue:true},timeout);if(r.exceptionDetails)throw Error('page exception: '+(r.exceptionDetails.exception?.description||r.exceptionDetails.text));return r.result.value;};
-  const KEYS={ArrowUp:38,ArrowDown:40,ArrowLeft:37,ArrowRight:39,Space:32,ShiftLeft:16,Enter:13,KeyE:69,KeyW:87,KeyA:65,KeyD:68,KeyS:83,Tab:9};
-  const keyName=c=>c.startsWith('Key')?c.slice(3).toLowerCase():c==='Space'?' ':c==='ShiftLeft'?'Shift':c;
+  const KEYS={ArrowUp:38,ArrowDown:40,ArrowLeft:37,ArrowRight:39,Space:32,ShiftLeft:16,Enter:13,KeyE:69,KeyN:78,ControlLeft:17,KeyW:87,KeyA:65,KeyD:68,KeyS:83,Tab:9};
+  const keyName=c=>c.startsWith('Key')?c.slice(3).toLowerCase():c==='Space'?' ':c==='ShiftLeft'?'Shift':c==='ControlLeft'?'Control':c;
   async function key(code,type='keyDown'){await send('Input.dispatchKeyEvent',{type,code,key:keyName(code),windowsVirtualKeyCode:KEYS[code],...(code==='Enter'&&type==='keyDown'?{text:'\r'}:{})});}
   async function press(code){await key(code,'keyDown');await key(code,'keyUp');}
   async function focus(selector){await send('Emulation.setFocusEmulationEnabled',{enabled:true});const ok=await evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e||e.disabled||e.closest('[hidden]'))return false;e.focus();return document.activeElement===e;})()`);if(!ok)throw Error('cannot focus '+selector);}
