@@ -157,14 +157,21 @@ async function approvals(a, b) {
       await activateClosingButton(app.cdp, page, '.btn-primary');
     }
     const pages = await Promise.all([a, b].map(async app => { const page = (await targets(app)).find(t => t.url.startsWith('pet-work:') && !t.url.includes('thumbnail=1')); if (!page) return null; if(app.game?.id!==page.id){app.game=page;await H.cdp(page,'Emulation.setFocusEmulationEnabled',{enabled:true});await H.cdp(page,'Page.captureScreenshot',{format:'png'});await recordErrors(page);} const ready = await H.evalIn(page, 'window.__kart?.state.view?.players?.length === 4 && window.__kart.state.view.players.some(p=>p.seat===window.__kart.state.view.you) && !document.querySelector("#ready").disabled', 3000).catch(() => false); if (ready) { app.game = page; return page; } return null; }));
-    return pages.every(Boolean);
+    if(!pages.every(Boolean))return false;
+    for(const app of [a,b])if((await state(app)).connection!=='connected')return false;return true;
   }, 'invitation, automatic TLS connection, SDK permission and current pets', 65000);
   assert(accepted >= 1, 'recipient must accept each game invitation'); assert([a.label,b.label].every(label=>report.sdkGrants.includes(label)), 'both fresh hosts require explicit SDK consent, including initial share-only approval');
   for (const app of [a, b]) { await watch(app.game, app.label + '-game'); assert.equal(await H.evalIn(app.game, '!document.querySelector("#server-address,#room-code") && document.querySelector("#title-panel").hidden'), true); const context = await H.evalIn(app.game, 'pet.sessions.getContext()'); assert.equal(context.role, app === a ? 'host' : 'guest'); assert.equal(context.artifactHash, hash(source)); app.context = context; }
   // The host context keeps the first invitation; each later guest has its own, listed in the host's peers.
   if (a.context.peers.length === 1) assert.equal(a.context.invitationId, b.context.invitationId);
   assert.equal(a.context.maxPlayers, 4); assert.equal(b.context.maxPlayers, 4);
-  assert(a.context.peers.some(p => p.displayName === b.name && p.status === 'connected'), 'host lists this guest as connected');
+  // Relay capability info intentionally carries device/fingerprint, not a
+  // display name. Bind the new connected session ID, never a LAN name assumption.
+  const prior=new Set(b.priorHostPeerIds||[]),added=a.context.peers.filter(p=>!prior.has(p.sessionPeerId));
+  assert.equal(added.length,1,'exactly the invited guest adds a new host session');
+  assert.equal(added[0].status,'connected','host lists the new guest as connected');
+  b.hostSessionPeerId=added[0].sessionPeerId;
+  (report.sessionBindings||=[]).push({guest:b.label,invitationId:b.context.invitationId,hostPeer:added[0]});
   check('real invite binds ' + b.label + ' to the host room: exact artifact, host referee, guest seat');
 }
 async function installAppearances(app) {
@@ -273,17 +280,28 @@ async function kartPlay(a,b,c,d){
   assert(all.every((app,n)=>host.karts.find(x=>x.seat===n).dist>30),'each human kart driven by its own keyboard '+JSON.stringify(host.karts.map(x=>[x.seat,x.dist|0])));
   check(all.length+' real keyboards drive their own karts through the host simulation',host.karts.map(x=>[x.seat,Math.round(x.dist)]));
   for(const [n,app] of guests.entries()){const seat=n+1,g=await state(app),auth=host.karts.find(x=>x.seat===seat);assert(g.pred&&Math.hypot(g.pred.x-auth.x,g.pred.z-auth.z)<14,'guest prediction tracks host '+app.label);}
+  // Keep real inputs running while screenshots and pet switching await frames.
+  const held=Object.fromEntries(all.map(app=>[app.label,{nitroMode:true}])),flight=Object.fromEntries(all.map(app=>[app.label,{}])),p={};let usedItem=false,driving=true,driveError;
+  const drivers=Promise.all(all.map(async app=>{
+    while(driving){
+      const q=p[app.label]=await autopilot(app,held[app.label]),f=flight[app.label];
+      if(q?.air&&q.glide&&q.authority?.air&&Math.abs(q.y-q.authority.y)<6)f.predictedFlight=true;
+      if(q?.landings>0)f.landed=true;
+      if(q?.authority?.nitroCasts>0&&q.nitroTime>0&&q.authority.nitroTime>0)f.nitro=true;
+      if(q?.rendered?.some(d=>d.seat!=='abcd'.indexOf(app.label)&&d.nitroFlame))f.remoteNitro=true;
+      if(q?.rendered?.some(d=>d.seat!=='abcd'.indexOf(app.label)&&d.glider))f.remoteCanopy=true;
+      if(app===c&&!usedItem&&q?.item&&!q.rolling){usedItem=q.item;await app.cdpS.press('KeyE');}
+      await H.sleep(40);
+    }
+  })).catch(error=>{driveError=error;driving=false;});
+  try{
   for(const app of all)await screenshot(app.game,'13-racing-'+app.label);
   await applyMain(a,'rat-doll-female');
   await wait(async()=>(await Promise.all(guests.map(async app=>(await state(app)).view.players[0].name!==names[0]))).every(Boolean),'host pet change reaches every guest',30000);
   check('host changes desktop pet mid-race; every guest sees the new driver');
-  const held=Object.fromEntries(all.map(app=>[app.label,{nitroMode:true}])),flight=Object.fromEntries(all.map(app=>[app.label,{}]));let usedItem=false;
-  await wait(async()=>{
-    const p={};for(const app of all)p[app.label]=await autopilot(app,held[app.label]);
-    for(const app of all){const q=p[app.label],f=flight[app.label];if(q?.air&&q.glide&&q.authority?.air&&Math.abs(q.y-q.authority.y)<6)f.predictedFlight=true;if(q?.landings>0)f.landed=true;if(q?.authority?.nitroCasts>0&&q.nitroTime>0&&q.authority.nitroTime>0)f.nitro=true;if(q?.rendered?.some(d=>d.seat!=='abcd'.indexOf(app.label)&&d.nitroFlame))f.remoteNitro=true;if(q?.rendered?.some(d=>d.seat!=='abcd'.indexOf(app.label)&&d.glider))f.remoteCanopy=true;}
-    if(!usedItem&&p.c?.item&&!p.c.rolling){await c.cdpS.press('KeyE');usedItem=p.c.item;}
-    return all.every(app=>p[app.label]?.phase==='results');
-  },'race to results with real keys',300000);
+  await wait(()=>driveError||all.every(app=>p[app.label]?.phase==='results'),'race to results with real keys',300000);
+  if(driveError)throw driveError;
+  }finally{driving=false;await drivers;}
   for(const app of all){assert(flight[app.label].predictedFlight&&flight[app.label].landed&&flight[app.label].remoteCanopy,'LAN flight, landing and remote canopy '+app.label+' '+JSON.stringify(flight));}
   for(const app of all)assert(flight[app.label].nitro&&flight[app.label].remoteNitro,'LAN manual nitro and remote cyan flame '+app.label+' '+JSON.stringify(flight));
   check('all real keyboards earn and release nitro, authority and remote exhaust agree',flight);
