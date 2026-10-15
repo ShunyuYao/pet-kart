@@ -1,4 +1,4 @@
-// LAN session adapter over the host's `pet.sessions` bridge (HTML work, experimental).
+// LAN / internet relay session adapter over the host's `pet.sessions` bridge (HTML work, experimental).
 // Room of up to 4 (protocol v2): the host is seat 0 and runs the authoritative room;
 // each guest (seats 1-3, in arrival order) sends intents only and talks to the host.
 // The host addresses a guest with `to` and learns the sender from `from`; it relays
@@ -7,7 +7,7 @@
 // ≤ 30 calls/s, ≤ 60 KB per message, ≤ 8 latest keys; transfers ≤ 1 MB, one at a time.
 (function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory(require('./room.cjs'));else root.KartNet=factory(root.KartRoom);})(globalThis,function(R){
   'use strict';
-  // Computer drivers fill every empty seat so a LAN race always has four karts.
+  // Computer drivers fill every empty seat so a network race always has four karts.
   const CPUS=[{name:'电脑 · 奶酪队长',signature:'builtin:cpu-cheddar',kind:'toy',color:'#6c7cff'},
     {name:'电脑 · 棉花教练',signature:'builtin:cpu-cotton',kind:'toy',color:'#22c55e'},
     {name:'电脑 · 布丁车手',signature:'builtin:cpu-pudding',kind:'toy',color:'#f59e0b'}];
@@ -58,7 +58,7 @@
       try{
         if(profile&&now()-lastHello>1000){lastHello=now();await send('kart.hello',{profile},'hello');}
         await send('kart.input',{...input,readySeq,ready:readyWant},'input');
-      }catch(e){if(!/backpressure/.test(e.message))fail(e);}finally{sending=false;}
+      }catch(e){if(!TRANSIENT.test(e.message))fail(e);}finally{sending=false;}
     }
     // ---------- host ----------
     function peer(id){let p=peers.get(id);if(!p){p={id,seat:null,lastHeard:now(),readySeq:0,sent:new Set(),sending:false,online:true,signature:null,pending:null};peers.set(id,p);}return p;}

@@ -1,0 +1,16 @@
+{
+  "file": "dist/桌宠赛车-LAN.html",
+  "bytes": 742717,
+  "sha256": "3f7a0e90cb541493423b4c285de31c12642d3fed8e2f076f70831e382727d8f3",
+  "version": "0.6.0",
+  "kitVersion": "0.3.0",
+  "kitManifestSha256": "46c8f77269dfaee956f8c2a8b7a1f6dd53f756aad7f3a14aabb9b417e939b4eb",
+  "protocol": {
+    "id": "pet-kart",
+    "version": 2
+  },
+  "transport": "lan",
+  "esbuild": "0.28.1",
+  "three": "0.164.1",
+  "cannon": "0.20.0"
+}

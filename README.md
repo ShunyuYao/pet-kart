@@ -1,10 +1,10 @@
 # 桌宠赛车 · Pet Kart
 
-一个单文件 HTML 的 3D 卡丁车游戏，给「吐梨邦」桌宠的 HTML 作品能力做的。在桌宠里打开会自动带入你当前的桌宠形象当车手；通过桌宠「发送并一起玩」可以和同一局域网的朋友对战，最多 4 人同局。
+一个单文件 HTML 的 3D 卡丁车游戏，给「吐梨邦」桌宠的 HTML 作品能力做的。在桌宠里打开会自动带入你当前的桌宠形象当车手；通过桌宠「发送并一起玩」可以和局域网或互联网好友对战，最多 4 人同局。
 
-A single-file HTML 3D kart racer for the 吐梨邦 desktop pet. Opened inside the pet it races your current pet; "send and play together" starts a LAN room of up to 4 players; more friends join from the game window's "+ Invite" control.
+A single-file HTML 3D kart racer for the 吐梨邦 desktop pet. Opened inside the pet it races your current pet; "send and play together" starts a LAN or internet relay room of up to 4 players; more friends join from the game window's "+ Invite" control.
 
-交付文件：[`dist/桌宠赛车.html`](dist/桌宠赛车.html)（约 720 KB，three.js 与全部代码内联，无 CDN、无服务器）。
+交付文件：[`dist/桌宠赛车.html`](dist/桌宠赛车.html)（约 720 KB，three.js 与全部代码内联，无需 CDN，互联网联机使用宿主中转服务）。
 
 ## 玩法
 
@@ -35,12 +35,12 @@ A single-file HTML 3D kart racer for the 吐梨邦 desktop pet. Opened inside th
 | 手动导入普通角色包或 PNG / WebP / JPG | 2D 车手 |
 | 内置 | 奶酪鼠 / 橘子猫 / 棉花兔 |
 
-`character.getRealtime` 已登记在 [pet-plugin-types](https://github.com/ShunyuYao/pet-plugin-types)；支持该能力且形象带实时数据的宿主可自动使用 3D，方法不存在时游戏自动回退 2D。导入的角色只保存在本作品的浏览器存储里，联机时经宿主的会话通道发给对方一次，不上传任何服务器。
+`character.getRealtime` 已登记在 [pet-plugin-types](https://github.com/ShunyuYao/pet-plugin-types)；支持该能力且形象带实时数据的宿主可自动使用 3D，方法不存在时游戏自动回退 2D。导入的角色只保存在本作品的浏览器存储里，联机时由宿主经局域网或中转通道发送给同局玩家。
 
 ## 联机
 
 1. 在桌宠聊天里把这份 HTML「发送并一起玩」给一位朋友，双方核对设备、同意后进入大厅。
-2. 想再拉人：点游戏窗口顶部控制栏的「＋ 邀请 n/4」，选同一局域网里的另一台桌宠。游戏窗口不会重开，已在大厅里的人不受影响。一次等一位回应。
+2. 想再拉人：点游戏窗口顶部控制栏的「＋ 邀请 n/4」，选另一位在线朋友（局域网或互联网好友）。游戏窗口不会重开，已在大厅里的人不受影响。一次等一位回应。
 3. 比赛进行中加入的朋友先观战，本局结算后顶替一位电脑车手上场；中途离开的人，座位在结算后还给电脑。
 4. 房主关窗或离开，整局结束。
 
@@ -76,3 +76,11 @@ npm run test:installed # 已安装宿主 + 当前形象只读副本
 MIT
 
 Remote cars use host simulation timestamps with a 150 ms presentation buffer and at most 100 ms of extrapolation. The real-host integration gate checks movement while both players drive, including batched SDK delivery; race changes and disconnects clear stale motion. This changes presentation only; the host still decides collisions and results.
+
+
+## Internet relay / 互联网中转
+
+默认HTML已使用宿主自动选择的LAN / authenticated relay；显式LAN产物另附。复跑方法和验收边界见[本轮交付记录](docs/internet-relay-20261015.md)。The default HTML selects LAN or authenticated relay through the host; an explicit LAN-only build is retained. See the delivery record for prerequisites and measured validation boundaries.
+
+互联网一起玩：双方登录同一桌宠环境、互加好友并保持在线，从小游戏目录选择新版游戏后「发送并一起玩」；第3、4人用游戏窗口的「＋邀请」加入。双方需使用同一份新版HTML，历史消息里旧版游戏不会自动换成新版。
+For internet play, sign in to the same host environment, add each other as friends and stay online. Send the updated game and play together; use the window's Invite control for players 3 and 4. All players need the same HTML; an old received file remains the old version.
